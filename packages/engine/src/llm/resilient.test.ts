@@ -96,7 +96,55 @@ describe("opt-in model replay", () => {
   });
 });
 
+const networkErrors = [
+  new TypeError("fetch failed"),
+  ...["ECONNRESET", "ENOTFOUND", "ETIMEDOUT", "ECONNREFUSED", "EAI_AGAIN", "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_SOCKET"]
+    .map((code) => new Error("private network failure", { cause: { code } })),
+  new DOMException("expired", "AbortError"),
+  new DOMException("expired", "TimeoutError"),
+  new Error("request timed out"),
+];
+
 describe("capacity degradation", () => {
+  it.each(networkErrors)("tries fallback then labels network exhaustion: %s", async (error) => {
+    const fallback = provider();
+    const resilient = new ResilientProvider(provider(error), { cacheIdentity: "model", fallback });
+    expect(await resilient.complete(request)).toEqual(output);
+    expect(fallback.complete).toHaveBeenCalledTimes(1);
+    expect(resilient.id).toBe("stub+fallback");
+    await expect(new ResilientProvider(provider(error), {
+      cacheIdentity: "model", fallback: provider(error),
+    }).complete(request)).rejects.toMatchObject({ name: "ModelUnavailableError", reason: "capacity-or-timeout" });
+  });
+
+  it("tries newly available replay before fallback after a network failure", async () => {
+    const cacheDir = await directory();
+    const live: LlmProvider = { id: "stub", complete: vi.fn(async () => {
+      await record(cacheDir);
+      throw new TypeError("fetch failed");
+    }) };
+    const fallback = provider();
+    const resilient = new ResilientProvider(live, { cacheDir, cacheIdentity: "model", fallback });
+    expect(await resilient.complete(request)).toEqual(output);
+    expect(fallback.complete).not.toHaveBeenCalled();
+    expect(resilient.id).toBe("stub+replay");
+  });
+
+  it("preserves bounded Gemini retries before switching models on fetch failures", async () => {
+    const fetch = vi.fn()
+      .mockRejectedValueOnce(new TypeError("fetch failed"))
+      .mockRejectedValueOnce(new TypeError("fetch failed"))
+      .mockResolvedValue(new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(output.value) }] } }] })));
+    vi.stubGlobal("fetch", fetch);
+    const resilient = new ResilientProvider(new GeminiProvider("fake", "primary", undefined, 0), {
+      cacheIdentity: "primary", fallback: new GeminiProvider("fake", "fallback", undefined, 0),
+    });
+    expect((await resilient.complete(request)).value).toEqual(output.value);
+    expect(fetch.mock.calls.map((call) => call[0])).toEqual([
+      expect.stringContaining("models/primary:"), expect.stringContaining("models/primary:"), expect.stringContaining("models/fallback:"),
+    ]);
+  });
+
   it("tries replay after a 429 before fallback (including a concurrently recorded result)", async () => {
     const cacheDir = await directory();
     const live: LlmProvider = { id: "stub", complete: vi.fn(async () => {
@@ -130,6 +178,8 @@ describe("capacity degradation", () => {
 
   it("does not mask non-capacity or schema errors with fallback", async () => {
     const fallback = provider();
+    await expect(new ResilientProvider(provider(new TypeError("cannot read property")), { cacheIdentity: "model", fallback })
+      .complete(request)).rejects.toThrow("cannot read property");
     await expect(new ResilientProvider(provider(new Error("invalid JSON")), { cacheIdentity: "model", fallback })
       .complete(request)).rejects.toThrow("invalid JSON");
     expect(fallback.complete).not.toHaveBeenCalled();

@@ -14,7 +14,13 @@ export class ModelUnavailableError extends Error {
 
 export function isCapacityError(error: unknown): boolean {
   if (!(error instanceof Error) || error.name === "ZodError" || error instanceof SyntaxError) return false;
-  return /Gemini returned (500|502|503|504)\b/.test(error.message)
+  const cause = error.cause;
+  const code = typeof cause === "object" && cause !== null && "code" in cause ? cause.code : undefined;
+  const networkCause = typeof code === "string"
+    && (/^(ECONNRESET|ENOTFOUND|ETIMEDOUT|ECONNREFUSED|EAI_AGAIN)$/.test(code) || code.startsWith("UND_ERR_"));
+  return networkCause
+    || (error instanceof TypeError && /fetch failed|failed to fetch|networkerror|network request failed/i.test(error.message))
+    || /Gemini returned (500|502|503|504)\b/.test(error.message)
     || /\b429\b|RESOURCE_EXHAUSTED|quota|rate.?limit|timed?\s*out|timeout/i.test(error.message)
     || ["TimeoutError", "AbortError"].includes(error.name);
 }

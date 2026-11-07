@@ -39,7 +39,7 @@ export function createProvider(env: NodeJS.ProcessEnv = process.env): LlmProvide
     // Fallback belongs outside the primary so replay gets first refusal.
     return new ResilientProvider(new GeminiProvider(env.GEMINI_API_KEY ?? "", env.GEMINI_MODEL), {
       cacheIdentity: env.GEMINI_MODEL,
-      cacheDir: record || replayOnly ? resolve(env.VIVA_LLM_CACHE_DIR ?? ".viva/cache") : undefined,
+      cacheDir: record || replayOnly ? (env.VIVA_LLM_CACHE_DIR ? resolve(env.VIVA_LLM_CACHE_DIR) : DEFAULT_CACHE_DIR) : undefined,
       record, replayOnly,
       fallback: !replayOnly && env.GEMINI_FALLBACK_MODEL
         ? new GeminiProvider(env.GEMINI_API_KEY!, env.GEMINI_FALLBACK_MODEL) : undefined,
@@ -48,6 +48,7 @@ export function createProvider(env: NodeJS.ProcessEnv = process.env): LlmProvide
   return new MockProvider();
 }
 
+const DEFAULT_CACHE_DIR = fileURLToPath(new URL("../../../.viva/cache", import.meta.url));
 const CHECKS_DIR = fileURLToPath(new URL("../../../checks", import.meta.url));
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);

@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { z } from "zod";
 import { join } from "node:path";
 import { FogMap, Review, ReviewCode, ReviewFeedback, SavedMemory, VivaEvent } from "@viva/contracts";
 import { fixtureRepo, MockProvider, ResilientProvider, type LlmProvider } from "@viva/engine";
@@ -41,6 +43,33 @@ describe("vivad", () => {
   it("reports health", async () => {
     const response = await createApp(new MockProvider()).request("/v1/health");
     expect(await response.json()).toEqual({ ok: true, llm: "mock" });
+  });
+
+  it("ignores a matching cache planted in the launch directory unless explicitly configured", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "viva-foreign-cache-"));
+    const cacheDir = join(dir, ".viva", "cache");
+    const request = { name: dir, system: "test", user: "test", schema: z.object({ answer: z.string() }) };
+    const stub: LlmProvider = { id: "gemini", complete: async (r) => ({
+      value: r.schema.parse({ answer: "planted" }), inputTokens: 1, outputTokens: 1,
+    }) };
+    try {
+      await new ResilientProvider(stub, { cacheIdentity: "test", cacheDir, record: true }).complete(request);
+      const cwd = vi.spyOn(process, "cwd").mockReturnValue(dir);
+      try {
+        const env = { VIVA_LLM: "gemini", GEMINI_MODEL: "test", VIVA_LLM_REPLAY: "1" };
+        await expect(createProvider(env).complete(request)).rejects.toMatchObject({ reason: "replay-miss" });
+        expect((await createProvider({ ...env, VIVA_LLM_CACHE_DIR: cacheDir }).complete(request)).value)
+          .toEqual({ answer: "planted" });
+      } finally { cwd.mockRestore(); }
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  });
+
+  it("labels exhausted network failures as HTTP 503 without exposing provider text", async () => {
+    const failing: LlmProvider = { id: "stub", complete: async () => { throw new TypeError("fetch failed: private body"); } };
+    const app = createApp(new ResilientProvider(failing, { cacheIdentity: "test", fallback: failing }));
+    const response = await post(app, "/v1/reviews", fixture());
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ code: "model-unavailable", error: expect.not.stringContaining("private body") });
   });
 
   it("offers replay-only without a key and labels a replay miss as infrastructure failure", async () => {
