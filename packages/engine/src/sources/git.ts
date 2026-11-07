@@ -47,3 +47,41 @@ export async function loadChange(repoPath: string, base: string, head: string): 
 export async function blobHash(repoPath: string, ref: string, path: string): Promise<string> {
   return (await git(repoPath, ["rev-parse", `${ref}:${path}`])).trim();
 }
+
+const MAX_CODE_BYTES = 1024 * 1024;
+const CODE_CONTEXT_LINES = 3;
+const MAX_CODE_LINES = 200;
+
+export type ReviewFile = { text: string } | { refused: "not-in-review" | "binary" | "too-large" };
+
+/**
+ * Reads a file from the head commit, but only if the change touched it. The path
+ * is matched against git's own list and the content comes from the object store,
+ * so no request path reaches the filesystem and symlinks are never followed.
+ */
+export async function readReviewFile(repoPath: string, base: string, head: string, file: string): Promise<ReviewFile> {
+  const changed = await git(repoPath, ["diff", "--name-only", "-z", `${base}...${head}`]);
+  if (!changed.split("\0").includes(file)) return { refused: "not-in-review" };
+  const entry = await git(repoPath, ["--literal-pathspecs", "ls-tree", "-l", "-z", head, "--", file]);
+  const [mode, type, hash, size] = entry.split("\t")[0]?.trim().split(/\s+/) ?? [];
+  // Absent at head (deleted), or a symlink, submodule or directory.
+  if (!hash || type !== "blob" || !/^100(644|755)$/.test(mode ?? "")) return { refused: "not-in-review" };
+  if (Number(size) > MAX_CODE_BYTES) return { refused: "too-large" };
+  const text = await git(repoPath, ["cat-file", "blob", hash]);
+  return text.includes("\0") ? { refused: "binary" } : { text };
+}
+
+/** Cuts the asked-for lines and some context from a file. Null if they aren't in it. */
+export function codeWindow(text: string, start: number, end: number) {
+  const all = text.replace(/\r?\n$/, "").split(/\r?\n/);
+  const totalLines = text === "" ? 0 : all.length;
+  if (start > totalLines) return null;
+  const from = Math.max(1, start - CODE_CONTEXT_LINES);
+  const wanted = Math.min(end + CODE_CONTEXT_LINES, totalLines);
+  const to = Math.min(wanted, from + MAX_CODE_LINES - 1);
+  const lines = all.slice(from - 1, to).map((line, i) => {
+    const number = from + i;
+    return { number, text: line, focus: number >= start && number <= end };
+  });
+  return { totalLines, lines, truncated: to < wanted };
+}
