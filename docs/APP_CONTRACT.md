@@ -85,7 +85,7 @@ All bodies are JSON. Errors are `{ "error": string }`.
 | `GET /v1/reviews/:id` | | `Review` | ✅ |
 | `POST /v1/reviews/:id/answers` | `Answer[]` | `Review` | ✅ |
 | `POST /v1/reviews/:id/skip` | | `Review` | ✅ Not yet in `client.ts` |
-| `GET /v1/fog?repo=<path>` | | `FogMap` | ✅ |
+| `GET /v1/fog?repo=<path>` | | `FogMap` | ✅ `?repo` optional with PR #37 |
 | `GET /v1/reviews/:id/feedback` | | `ReviewFeedback` | 🔜 PR #5 |
 | `GET /v1/reviews/:id/code?file=&start=&end=` | | `ReviewCode` | 🔜 PR #8 |
 | `GET /v1/events` | | Server-sent events, each `data:` is a `VivaEvent` | 🔜 PR #35 |
@@ -93,7 +93,7 @@ All bodies are JSON. Errors are `{ "error": string }`.
 Notes:
 
 - **Unanswered questions fail.** Send every question in `plan.questions`. A missing or blank answer scores zero, and no retry is offered in the same review.
-- **`?repo` is effectively required for the Fog.** Without it, the daemon maps its own working directory, which is not the repo being pushed. `getFog()` doesn't send it yet. The `repoPath` on a `Review` holds the right value.
+- **Which repo the Fog maps:** on `main`, `?repo` is effectively required, as without it the daemon maps its own working directory. With PR #37, it maps the most recently pushed repo and `getFog()` needs no `?repo`. Before any push, or after a daemon restart, you get `repoPath: null` and no nodes, so show an empty state.
 - **Reviews live in memory.** Restarting the daemon gives a 404 for old IDs, so show a clear "run `git push` again" message.
 
 ### Errors
@@ -166,6 +166,7 @@ Line numbers come from the model, and the daemon can't tell if they point at the
 
 ```ts
 FogMap: {
+  repoPath: string | null; // PR #37. Null means no push seen yet: show an empty state
   generatedAt: string;
   debt: number;       // total comprehension debt. No fixed unit, so show trends
   nodes: FogNode[];
@@ -226,7 +227,7 @@ Adding `?mock` loads `fixtures/mock/fog.json`, `fixtures/mock/review.json` and, 
 
 **Known problem:** the exam room also falls back to mock data when there's no `review` in the URL, even without `?mock`. Opening the Exam room tab with the daemon running shows a fake exam, so don't treat it as real.
 
-To test a state, add a fixture, for example `review-failed.json`, and keep it valid against the schema.
+With PR #37, `?mock&empty` loads `fixtures/mock/fog-empty.json`, the empty state. To test another state, add a fixture, for example `review-failed.json`, and keep it valid against the schema.
 
 ## Gaps to agree
 
@@ -237,6 +238,6 @@ Marcus to confirm. Until these land, build the UI against the proposed shape beh
 | **Code for the exam:** no way to fetch the lines under discussion | Code highlighting | 🔜 PR #8 |
 | **Live progress:** no updates during a review or while fog changes | Fog rolling in live, loading screens | 🔜 PR #35 for fog and review changes. Progress during a review is still open |
 | **Latest review:** the Exam room tab has no ID without the URL | Opening the tab directly | 📝 Use the first item from `GET /v1/reviews` |
-| **Which repo:** the UI doesn't know the repo for the Fog | Live Fog | 📝 Take it from the latest review, or a daemon setting |
+| **Which repo:** the UI doesn't know the repo for the Fog | Live Fog | 🔜 PR #37: the daemon remembers the last pushed repo, in memory |
 | **Skip:** not in `client.ts`, and the reason isn't recorded in the ledger | Skip button | 📝 Add `skipReview(id)` |
 | **Debt over time:** only the current total exists | A trend chart | 📝 Stretch, with Tiger Data |
