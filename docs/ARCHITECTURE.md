@@ -58,7 +58,7 @@ The daemon deduplicates reviews by a SHA-256 identity of canonical repository pa
 - **Fail open.** If the daemon is down, the push goes through with a warning. Reliability beats coverage, as in HRT's Blobby talk.
 - **Budget per review.** `MeteredProvider` counts tokens and enforces a cap, so a bug can't burn the credits.
 - **Separate grader.** The examiner converses, while the grader only sees the transcript and rubric, so accent and fluency can't affect a score.
-- **Ledger in git notes.** It needs no server, travels with the repo, and leaves your branch alone. `refs/notes/viva` has to be pushed explicitly to share it.
+- **Ledger in git notes.** It needs no server, travels with the repo, and leaves your branch alone. Before reviews and Fog loads, fetch `refs/notes/viva` from `origin` into a separate tracking ref and merge with `cat_sort_uniq`. Local notes are never overwritten. Exam attestations trigger background publication; `viva ledger sync` explicitly retries fetch, merge and publication. Pushes use `--no-verify` to avoid hook recursion and retry once after fetching and merging a competing update. Transport has a total 1.5-second budget per attempt at sync, disables Git credential prompts and uses noninteractive SSH by default, and fails open without logging Git output. Notes writes and merges are serialized within the daemon, including linked worktrees. Failed publication leaves local entries available for a later explicit sync. Nothing beyond the existing attestations is added to notes.
 - **Understanding expires.** Mastery halves every 14 days, and halves again when the code changes.
 
 ## Known gaps
@@ -67,7 +67,6 @@ The daemon deduplicates reviews by a SHA-256 identity of canonical repository pa
 - `pnpm evals` still uses the mock provider, so check quality on real diffs is unmeasured.
 - The fog is per file, with blast radius at 0. Symbol-level needs entire-graph.
 - Full reviews and feedback are held in memory. Only completed retry decisions survive daemon restart.
-- Ledger notes aren't pushed automatically yet.
 - The pipeline and terminal hook have been exercised on macOS (including a PTY with piped hook stdin). CI covers Windows, but Windows controlling-console behaviour is not yet verified; console failure falls back to the browser.
 
 ## Open problems

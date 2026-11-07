@@ -17,6 +17,7 @@ import {
   skipWithDebt,
   startReview,
   submitAnswers,
+  syncLedger,
   type LlmProvider,
 } from "@viva/engine";
 import { Hono } from "hono";
@@ -81,6 +82,7 @@ export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 200
     let pending = byKey.get(key);
     if (!pending) {
       pending = (async () => {
+        await syncLedger(request.repoPath, { push: false });
         const receipt = await readDecision(dir, key);
         const review: Review = receipt ? {
           id: receipt.reviewId, request, stage: "done", claims: [], plan: null, grades: [],
@@ -132,6 +134,8 @@ export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 200
     try {
       const { review, attestations } = await submitAnswers(current, answers, { llm });
       await appendAttestations(review.request.repoPath, review.request.head, attestations);
+      // Transport never delays the exam response or changes its gate decision.
+      void syncLedger(review.request.repoPath);
       await writeDecision(review);
       await record(review);
       return c.json(review);
@@ -221,9 +225,12 @@ export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 200
   }));
 
   app.get("/v1/fog", async (c) => {
-    const fog = async (repoPath: string) => FogMap.parse({
-      repoPath, ...computeFog(await loadFogFiles(repoPath), await readLedger(repoPath), new Date()),
-    });
+    const fog = async (repoPath: string) => {
+      await syncLedger(repoPath, { push: false });
+      return FogMap.parse({
+        repoPath, ...computeFog(await loadFogFiles(repoPath), await readLedger(repoPath), new Date()),
+      });
+    };
     const requested = c.req.query("repo");
     if (requested) return c.json(await fog(requested));
     const remembered = latestRepo;

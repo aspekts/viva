@@ -1,5 +1,6 @@
 import { Attestation } from "@viva/contracts";
 import { git } from "../sources/git.js";
+import { withLedgerLock } from "./lock.js";
 
 export const NOTES_REF = "refs/notes/viva";
 
@@ -26,5 +27,5 @@ export async function readLedger(repoPath: string): Promise<Attestation[]> {
 
 export async function appendAttestations(repoPath: string, commit: string, rows: Attestation[]): Promise<void> {
   if (rows.length === 0) return;
-  await git(repoPath, ["notes", "--ref", NOTES_REF, "append", "-F", "-", commit], rows.map((r) => JSON.stringify(r)).join("\n"));
+  await withLedgerLock(repoPath, () => git(repoPath, ["notes", "--ref", NOTES_REF, "append", "-F", "-", commit], rows.map((r) => JSON.stringify(r)).join("\n")));
 }

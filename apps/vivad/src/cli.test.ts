@@ -6,9 +6,11 @@ import sample from "../../../fixtures/mock/review.json";
 vi.mock("open", () => ({ default: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("./terminal.js", () => ({ pushContext: vi.fn(), controllingTerminal: vi.fn() }));
 vi.mock("./exam.js", () => ({ runExam: vi.fn() }));
+vi.mock("@viva/engine", async (original) => ({ ...await original<typeof import("@viva/engine")>(), syncLedger: vi.fn() }));
 vi.mock("./feedback.js", async (original) => ({ ...await original<typeof import("./feedback.js")>(), handToAgent: vi.fn().mockResolvedValue(0) }));
 
 import open from "open";
+import { syncLedger } from "@viva/engine";
 import { gate, main, presentReview } from "./cli.js";
 import { ApiError, DaemonClient } from "./client.js";
 import { pushContext, controllingTerminal } from "./terminal.js";
@@ -20,6 +22,16 @@ const pending = Review.parse({ ...sample, stage: "awaiting-exam", gate: null });
 const client = new DaemonClient();
 
 describe("CLI gate", () => {
+  it("offers an explicit ledger sync and stays fail-open when offline", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.mocked(syncLedger).mockResolvedValue(false);
+    expect(await main(["ledger", "sync"])).toBe(0);
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("local notes retained"));
+    vi.mocked(syncLedger).mockResolvedValue(true);
+    expect(await main(["ledger", "sync"])).toBe(0);
+    expect(log).toHaveBeenCalledWith("viva: ledger synced");
+  });
+
   it("prints actionable instructions and exits immediately without polling in an agent", async () => {
     vi.mocked(pushContext).mockReturnValue({ terminal: false, openBrowser: false });
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
