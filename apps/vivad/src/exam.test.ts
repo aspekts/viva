@@ -59,16 +59,19 @@ it("never offers skip or calls the skip API for a hard gate", async () => {
 });
 
 describe("saving the explanation", () => {
+  // Input goes through act(), as above, so a busy test run can't drop a keypress.
   const passed = async (client: DaemonClient) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     const initial = Review.parse({ ...sample, stage: "awaiting-exam", gate: null });
     const done: Review = { ...initial, stage: "done", gate: { verdict: "approve", reason: "exam-passed", skippable: true } };
     vi.spyOn(client, "answer").mockResolvedValue(done);
     const fail = vi.fn();
-    const app = render(createElement(Exam, { initial, client, finish: vi.fn(), fail }));
+    let app!: ReturnType<typeof render>;
+    await act(async () => { app = render(createElement(Exam, { initial, client, finish: vi.fn(), fail })); });
     await vi.waitFor(() => expect(app.lastFrame()).toContain(initial.plan!.questions[0]!.ask));
-    app.stdin.write("my reasoning");
+    await act(async () => { app.stdin.write("my reasoning"); });
     await vi.waitFor(() => expect(app.lastFrame()).toContain("my reasoning"));
-    app.stdin.write("\r");
+    await act(async () => { app.stdin.write("\r"); });
     await vi.waitFor(() => expect(app.lastFrame()).toContain("approve (exam-passed)"));
     return { app, fail };
   };
@@ -80,11 +83,11 @@ describe("saving the explanation", () => {
     try {
       expect(app.lastFrame()).toContain("m: save your explanation as project memory");
       expect(save).not.toHaveBeenCalled();
-      app.stdin.write("m");
+      await act(async () => { app.stdin.write("m"); });
       await vi.waitFor(() => expect(app.lastFrame()).toContain("Saved to .viva/memory/src/webhook.ts.md"));
       expect(save).toHaveBeenCalledTimes(1);
       expect(fail).not.toHaveBeenCalled();
-    } finally { app.unmount(); }
+    } finally { await act(async () => { app.unmount(); }); }
   });
 
   it("keeps the verdict when saving fails", async () => {
@@ -92,11 +95,11 @@ describe("saving the explanation", () => {
     vi.spyOn(client, "saveMemory").mockRejectedValue(new Error("disk full"));
     const { app, fail } = await passed(client);
     try {
-      app.stdin.write("m");
+      await act(async () => { app.stdin.write("m"); });
       await vi.waitFor(() => expect(app.lastFrame()).toContain("Your push is unaffected"));
       expect(app.lastFrame()).toContain("approve (exam-passed)");
       expect(fail).not.toHaveBeenCalled();
-    } finally { app.unmount(); }
+    } finally { await act(async () => { app.unmount(); }); }
   });
 });
 
