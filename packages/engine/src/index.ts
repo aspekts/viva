@@ -7,6 +7,7 @@ export * from "./llm/gemini.js";
 export * from "./llm/mock.js";
 export * from "./llm/provider.js";
 export * from "./memory/retrieve.js";
+export * from "./llm/resilient.js";
 export * from "./memory/store.js";
 export * from "./pipeline/aggregate.js";
 export * from "./pipeline/checks.js";

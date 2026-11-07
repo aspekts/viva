@@ -6,6 +6,12 @@ All results below came from the live model unless marked. `pnpm check` and CI st
 This is one small corpus of hand-written fixtures, 16 of 27 model-tested cases being bugs, so
 read the numbers as direction and not as a general accuracy estimate.
 
+These numbers come from live runs made before this work was re-landed on top of the Entire session
+reader and the empty-exam fix, and they were not re-run after. The evals pass no Entire session, so
+the reader does not change what the checks see. Two things do differ from those runs: a plan with no
+usable questions now fails the review, so `--exam` counts it as an error and not as an exam, and token
+estimates use 3.5 characters per token, so offline mock token counts are higher than before.
+
 ### Before and after, `gemini-3.5-flash-lite`
 
 The 8 holdout cases were fixed in a commit before any tuning run. Prompts were tuned on the other
