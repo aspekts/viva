@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -113,13 +113,42 @@ describe("saving memory", () => {
     expect(await readMemory(repo, "../outside.ts")).toEqual([]);
   });
 
-  it.skipIf(process.platform === "win32")("refuses to write through a symlinked memory folder", async () => {
+  /**
+   * Links a folder, or returns false where this machine doesn't allow it. A junction
+   * needs no privilege on Windows; elsewhere the type is ignored.
+   */
+  const link = (target: string, path: string) => {
+    try {
+      symlinkSync(target, path, "junction");
+      return true;
+    } catch (error) {
+      if (["EPERM", "EACCES"].includes((error as NodeJS.ErrnoException).code ?? "")) return false;
+      throw error;
+    }
+  };
+  const noLinks = "this machine does not permit creating symlinks or junctions";
+
+  it.for([
+    { name: ".viva", link: [".viva"] },
+    { name: ".viva/memory", link: [".viva", "memory"] },
+    { name: "a nested memory folder", link: [".viva", "memory", "src"] },
+  ])("refuses a symlinked $name before creating anything outside the repo", async ({ link: path }, ctx) => {
     const { repo, review, answers } = await passedExam();
     const outside = mkdtempSync(join(tmpdir(), "viva-outside-"));
     repos.push(outside);
-    mkdirSync(join(repo, ".viva"), { recursive: true });
-    symlinkSync(outside, join(repo, ".viva", "memory"));
+    mkdirSync(join(repo, ...path.slice(0, -1)), { recursive: true });
+    if (!link(outside, join(repo, ...path))) ctx.skip(noLinks);
+
     await expect(saveMemory(review, answers)).rejects.toThrow(/memory folder/);
+    expect(readdirSync(outside)).toEqual([]);
+  });
+
+  it("refuses a nested folder that is a file", async () => {
+    const { repo, review, answers } = await passedExam();
+    mkdirSync(join(repo, ".viva", "memory"), { recursive: true });
+    writeFileSync(join(repo, ".viva", "memory", "src"), "not a folder");
+    await expect(saveMemory(review, answers)).rejects.toThrow(/memory folder/);
+    expect(existsSync(join(repo, ".viva", "memory", "src", "pay.ts.md"))).toBe(false);
   });
 
   it("reads missing memory as empty", async () => {

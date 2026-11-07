@@ -134,13 +134,32 @@ const inside = (root: string, path: string) => {
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 };
 
-/** Refuses to write through a symlink that leads out of the memory folder. */
+/**
+ * Refuses to write through a symlink. Every folder on the way to the memory file
+ * that already exists is checked before anything is created, so a symlinked
+ * `.viva`, `.viva/memory` or nested folder can't make Viva create folders, or
+ * write, outside the repo.
+ */
 async function safeTarget(repoPath: string, parts: string[]): Promise<string> {
   const root = await realpath(repoPath);
   const memoryRoot = join(root, ...MEMORY_DIR.split("/"));
   const target = join(memoryRoot, ...parts) + ".md";
+  let folder = root;
+  for (const name of [...MEMORY_DIR.split("/"), ...parts.slice(0, -1)]) {
+    folder = join(folder, name);
+    const found = await lstat(folder).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    });
+    // Everything below a missing folder is missing too, and is created only inside the checked path.
+    if (!found) break;
+    if (found.isSymbolicLink() || !found.isDirectory()) {
+      throw new Error("memory folder is not a plain directory in this repo");
+    }
+  }
   await mkdir(dirname(target), { recursive: true });
-  if ((await realpath(memoryRoot)) !== memoryRoot || !inside(memoryRoot, await realpath(dirname(target)))) {
+  // A second look catches a folder swapped for a symlink while we were checking.
+  if (!inside(memoryRoot, await realpath(dirname(target)))) {
     throw new Error("memory folder is not a plain directory in this repo");
   }
   const existing = await lstat(target).catch(() => null);
