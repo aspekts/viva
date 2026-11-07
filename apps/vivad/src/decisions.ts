@@ -22,10 +22,18 @@ export async function decisionIdentity(request: ReviewRequest) {
   return { request: canonical, key, dir };
 }
 
+/**
+ * Policy 2: before it, an exam plan with no questions could record exam-passed.
+ * Older passes are examined again, while older failures and skips still stand.
+ */
+export const DECISION_POLICY = 2;
+
 export async function readDecision(dir: string, key: string): Promise<ReviewDecision | null> {
   try {
     const receipt = ReviewDecision.parse(JSON.parse(await readFile(join(dir, `${key}.json`), "utf8")));
-    return receipt.key === key ? receipt : null;
+    if (receipt.key !== key) return null;
+    const stalePass = receipt.gate.reason === "exam-passed" && (receipt.policy ?? 1) < DECISION_POLICY;
+    return stalePass ? null : receipt;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
     // A damaged cache is an infrastructure error, handled by the fail-open hook.
@@ -36,7 +44,9 @@ export async function readDecision(dir: string, key: string): Promise<ReviewDeci
 export async function writeDecision(review: Review): Promise<void> {
   if (!review.gate || !review.finishedAt || review.gate.reason === "pipeline-error") return;
   const { dir, key } = await decisionIdentity(review.request);
-  const receipt = ReviewDecision.parse({ key, reviewId: review.id, gate: review.gate, finishedAt: review.finishedAt });
+  const receipt = ReviewDecision.parse({
+    key, reviewId: review.id, gate: review.gate, finishedAt: review.finishedAt, policy: DECISION_POLICY,
+  });
   await mkdir(dir, { recursive: true, mode: 0o700 });
   const temporary = join(dir, `${key}.${randomUUID()}.tmp`);
   await writeFile(temporary, JSON.stringify(receipt), { mode: 0o600 });
