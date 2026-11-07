@@ -12,6 +12,8 @@ export interface DirectionCase {
   direction: boolean;
   /** Model calls: no relevant memory must mean no direction call. */
   llmCalls: number;
+  /** Drop the planner's questions on direction claims, as a model might, to prove they are still asked. */
+  plannerSkipsDirection?: boolean;
 }
 
 const pay = "export function pay(card) {\n  check(card);\n  return send(card);\n}\n";
@@ -50,6 +52,17 @@ export const directionCases: DirectionCase[] = [
     expect: "exam",
     direction: true,
     llmCalls: 5,
+  },
+  {
+    name: "planner leaves out the reversal",
+    intent: "return what send gives back",
+    before: { "src/pay.ts": pay, ".viva/memory/src/pay.ts.md": memory },
+    after: { "src/pay.ts": "export function pay(card) {\n  const sent = send(card);\n  check(card);\n  return sent;\n}\n" },
+    // The plan still holds a question on the reversal, built from the claim.
+    expect: "exam",
+    direction: true,
+    llmCalls: 5,
+    plannerSkipsDirection: true,
   },
   {
     name: "memory added in the same push",

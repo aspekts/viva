@@ -5,7 +5,7 @@ import type { Attestation, MemoryEntry } from "@viva/contracts";
 import { defaults } from "../config.js";
 import { MockProvider } from "../llm/mock.js";
 import { parseCheck, runChecks } from "../pipeline/checks.js";
-import { startReview, type ReviewDeps } from "../pipeline/review.js";
+import { startReview, submitAnswers, type ReviewDeps } from "../pipeline/review.js";
 import { blobHash } from "../sources/git.js";
 import { grepBlastRadius } from "../sources/graph.js";
 import { fixtureRepo, type FileMap } from "../testing.js";
@@ -187,6 +187,41 @@ describe("the direction check", () => {
     expect(asked).toHaveLength(defaults.maxQuestions);
     expect(asked[0]).toMatchObject({ check: "direction", origin: "requested" });
     expect(asked.slice(1).every((c) => c.check !== "direction" && c.risk >= defaults.riskThreshold)).toBe(true);
+  });
+
+  it("examines a reversal even when the planner leaves it out", async () => {
+    const { repo: path, base, head } = repo(
+      { "src/pay.ts": pay, [MEMORY]: memoryFile(entry()) },
+      { "src/pay.ts": reversed, "src/a.ts": "export const retry = 1;\n" },
+    );
+    // A schema-valid planner that only asks about the ordinary claim.
+    const llm = new MockProvider();
+    const real = llm.complete.bind(llm);
+    vi.spyOn(llm, "complete").mockImplementation(async (request) => {
+      if (request.name === "check:risky-a") {
+        const claim = { summary: "Adds a retry", origin: "silent", symbols: [], location: { file: "src/a.ts", lines: [1, 1] }, evidence: "e" };
+        return { value: request.schema.parse({ claims: [claim] }), inputTokens: 1, outputTokens: 1 };
+      }
+      if (request.name !== "plan") return real(request);
+      const claimId = /"id":"(risky-a-\d+)"/.exec(request.user)?.[1];
+      const question = { id: "q1", claimId, ask: "What happens when the retry runs twice?", mustMention: ["the payment is retried once more"], followUpIfVague: "Think about retries.", location: { file: "src/a.ts", lines: [1, 1] } };
+      return { value: request.schema.parse({ questions: [question] }), inputTokens: 1, outputTokens: 1 };
+    });
+    const deps_ = deps({ llm, checks: [direction, parseCheck("---\nname: risky-a\n---\nFind.")] });
+    const review = await startReview({ repoPath: path, base, head, person: "Marcus" }, deps_);
+
+    const reversal = review.claims.find((c) => c.check === "direction")!;
+    const asked = review.plan!.questions;
+    expect(asked.map((q) => q.claimId)).toEqual([reversal.id, review.claims.find((c) => c.check === "risky-a")!.id]);
+    expect(asked[0]).toMatchObject({
+      id: `fallback-${reversal.id}`,
+      ask: "This change appears to reverse a recorded decision: You told us checking the card before sending it was deliberate, this change reverses it. Is that the right direction, and why?",
+      location: reversal.location,
+    });
+
+    // Answering only the planner's question can't pass the exam.
+    const onlyOther = await submitAnswers(review, [{ questionId: "q1", transcript: "the payment is retried once more", mode: "typed" }], deps_);
+    expect(onlyOther.review.gate).toMatchObject({ verdict: "reject" });
   });
 
   it("carries on without memory when reading it fails", async () => {

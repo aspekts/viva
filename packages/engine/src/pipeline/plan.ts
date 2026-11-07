@@ -36,8 +36,43 @@ export function questionProblems({ ask, mustMention }: Pick<Question, "ask" | "m
   return problems.filter(([failed]) => failed).map(([, code]) => code);
 }
 
-export async function planExam(claims: RankedClaim[], llm: LlmProvider): Promise<ExamPlan> {
-  const brief = claims.slice(0, 3).map(({ id, summary, origin, location, evidence }) => ({
+/**
+ * A question built from the claim alone, for a claim that must be examined but that the
+ * planner left out. Only the claim's own fields go in, flattened so the summary reads as
+ * one spoken sentence and can't open or close a tag in a later prompt.
+ */
+export function fallbackQuestion(claim: Pick<RankedClaim, "id" | "summary" | "location">, id: string): Question {
+  const summary = claim.summary
+    .replace(/;/g, ",")
+    .replace(/[`{}<>?]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[.,]+$/, "")
+    .split(" ")
+    .slice(0, MAX_SPOKEN_WORDS)
+    .join(" ");
+  return {
+    id,
+    claimId: claim.id,
+    ask: `This change appears to reverse a recorded decision: ${summary}. Is that the right direction, and why?`,
+    mustMention: ["Why the recorded decision no longer applies here", "What the change does instead of the recorded decision"],
+    followUpIfVague: "Think about why the decision was recorded, and what is different now.",
+    location: claim.location,
+  };
+}
+
+/**
+ * Plans up to three questions. Claims for which `mustAsk` holds always get one: the
+ * planner's if it wrote one, otherwise a fallback built from the claim. They come first
+ * in ranked claims, so they're always inside the three.
+ */
+export async function planExam(
+  claims: RankedClaim[],
+  llm: LlmProvider,
+  mustAsk: (claim: RankedClaim) => boolean = () => false,
+): Promise<ExamPlan> {
+  const chosen = claims.slice(0, 3);
+  const brief = chosen.map(({ id, summary, origin, location, evidence }) => ({
     id,
     summary,
     origin,
@@ -50,13 +85,20 @@ export async function planExam(claims: RankedClaim[], llm: LlmProvider): Promise
     user: untrusted("claims", JSON.stringify(brief)),
     schema: ExamPlan,
   });
-  // One question per real claim. The location comes from the claim, not the model.
-  const unasked = new Map(brief.map((claim) => [claim.id, claim]));
-  const questions = value.questions.flatMap((question) => {
-    const claim = unasked.get(question.claimId);
-    if (!claim) return [];
-    unasked.delete(question.claimId);
-    return [{ ...question, location: claim.location }];
+  // One question per real claim, in claim order. The location comes from the claim, not the model.
+  const written = new Map<string, Question>();
+  for (const question of value.questions) {
+    if (!written.has(question.claimId)) written.set(question.claimId, question);
+  }
+  const ids = new Set(value.questions.map((q) => q.id));
+  const questions = chosen.flatMap((claim): Question[] => {
+    const question = written.get(claim.id);
+    if (question) return [{ ...question, location: claim.location }];
+    if (!mustAsk(claim)) return [];
+    let id = `fallback-${claim.id}`;
+    while (ids.has(id)) id = `${id}-1`;
+    ids.add(id);
+    return [fallbackQuestion(claim, id)];
   });
   // A plan with no usable questions would grade as a pass, so it's a pipeline failure.
   if (questions.length === 0) throw new Error("exam plan asked about none of the risky claims");

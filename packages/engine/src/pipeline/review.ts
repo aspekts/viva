@@ -125,7 +125,8 @@ export async function startReview(request: ReviewRequest, deps: ReviewDeps): Pro
     );
   }
 
-  const plan = await planExam(risky, llm);
+  // The planner may leave a reversal out, so planExam falls back to a question built from the claim.
+  const plan = await planExam(risky, llm, reversesMemory);
   return { ...review, stage: "awaiting-exam", plan };
 }
 
