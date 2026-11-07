@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { readFileSync, readdirSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Review, ReviewFeedback } from "@viva/contracts";
+import { Review, ReviewCode, ReviewFeedback } from "@viva/contracts";
 import { MockProvider } from "@viva/engine";
 import { fixtureRepo } from "../../../packages/engine/src/testing.js";
 import { createApp } from "./app.js";
@@ -130,5 +131,118 @@ describe("vivad", () => {
     const second = await start(createApp(new MockProvider()), request);
     expect(second.stage).toBe("awaiting-exam");
     expect(second.id).not.toBe(first.id);
+  });
+
+  describe("code for the exam", () => {
+    const numbered = (from: number, to: number, label = "line") =>
+      Array.from({ length: to - from + 1 }, (_, i) => `${label} ${from + i}\n`).join("");
+
+    function changed(after: string, others: Record<string, string> = {}) {
+      const path = "src/pay.ts";
+      const { repo, base, head } = fixtureRepo({ [path]: "export function pay() { return 1; }\n", "src/other.ts": "const secret = 1;\n" }, { [path]: after, ...others });
+      repos.push(repo);
+      return { repoPath: repo, base, head, person: "Test" };
+    }
+    const code = (app: ReturnType<typeof createApp>, id: string, file: string, start: number | string = 1, end: number | string = 1, host = "http://localhost") =>
+      app.request(`${host}/v1/reviews/${id}/code?${new URLSearchParams({ file, start: String(start), end: String(end) })}`);
+
+    it("serves the asked-for lines with context from the head commit, not the working tree", async () => {
+      const app = createApp(new MockProvider());
+      const request = changed(numbered(1, 20));
+      const review = await start(app, request);
+      writeFileSync(join(request.repoPath, "src/pay.ts"), "uncommitted\n");
+      const response = await code(app, review.id, "src/pay.ts", 10, 11);
+      expect(response.status).toBe(200);
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      const body = ReviewCode.parse(await response.json());
+      expect(body).toMatchObject({ reviewId: review.id, file: "src/pay.ts", commit: request.head, totalLines: 20, truncated: false });
+      expect(body.lines.map((l) => l.number)).toEqual([7, 8, 9, 10, 11, 12, 13, 14]);
+      expect(body.lines.filter((l) => l.focus).map((l) => l.text)).toEqual(["line 10", "line 11"]);
+    });
+
+    it("clamps context at both ends of the file, and handles CRLF", async () => {
+      const app = createApp(new MockProvider());
+      const review = await start(app, changed("one\r\ntwo\r\nthree\r\n"));
+      const body = ReviewCode.parse(await (await code(app, review.id, "src/pay.ts", 2, 9)).json());
+      expect(body.lines.map((l) => [l.number, l.text, l.focus])).toEqual([[1, "one", false], [2, "two", true], [3, "three", true]]);
+    });
+
+    it("cuts off very long locations and says so", async () => {
+      const app = createApp(new MockProvider());
+      const review = await start(app, changed(numbered(1, 1000)));
+      const body = ReviewCode.parse(await (await code(app, review.id, "src/pay.ts", 1, 1000)).json());
+      expect(body.lines).toHaveLength(200);
+      expect(body).toMatchObject({ truncated: true, totalLines: 1000 });
+    });
+
+    it.each(["src/other.ts", "../../../../../../etc/passwd", "/etc/passwd", ".git/config", "src/../src/other.ts", "src/*", ":(glob)src/**", "src/nope.ts"])(
+      "refuses %s, which is not in the review",
+      async (file) => {
+        const app = createApp(new MockProvider());
+        const review = await start(app, changed(numbered(1, 3)));
+        const response = await code(app, review.id, file);
+        expect(response.status).toBe(404);
+        expect(await response.text()).not.toMatch(/secret|root:/);
+      },
+    );
+
+    it("serves executable files, but refuses a deleted file and a symlink in the change", async () => {
+      const { repo, base } = fixtureRepo({ "gone.ts": "bye\n", "keep.ts": "stay\n" }, { "keep.ts": "still here\n" });
+      repos.push(repo);
+      const run = (...args: string[]) => execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trim();
+      run("rm", "-q", "gone.ts");
+      const target = execFileSync("git", ["hash-object", "-w", "--stdin"], { cwd: repo, input: "keep.ts", encoding: "utf8" }).trim();
+      run("update-index", "--add", "--cacheinfo", `120000,${target},link.ts`);
+      run("update-index", "--add", "--cacheinfo", `100755,${target},run.sh`);
+      run("commit", "-q", "-m", "delete and link");
+      const app = createApp(new MockProvider());
+      const review = await start(app, { repoPath: repo, base, head: run("rev-parse", "HEAD"), person: "Test" });
+      expect((await code(app, review.id, "gone.ts")).status).toBe(404);
+      expect((await code(app, review.id, "link.ts")).status).toBe(404);
+      expect((await code(app, review.id, "run.sh")).status).toBe(200);
+    });
+
+    it("refuses binary files, oversized files and lines past the end", async () => {
+      const app = createApp(new MockProvider());
+      const review = await start(app, changed(numbered(1, 3), { "logo.png": "a\0b\n", "huge.ts": "x".repeat(1024 * 1024 + 1) }));
+      expect((await code(app, review.id, "logo.png")).status).toBe(422);
+      expect((await code(app, review.id, "huge.ts")).status).toBe(422);
+      expect((await code(app, review.id, "src/pay.ts", 4, 5)).status).toBe(422);
+    });
+
+    it.each([["", 1, 1], ["src/pay.ts", 0, 1], ["src/pay.ts", 3, 2], ["src/pay.ts", "x", 2], ["src/pay.ts", 1.5, 2]])(
+      "rejects the query file=%s start=%s end=%s",
+      async (file, from, to) => {
+        const app = createApp(new MockProvider());
+        const review = await start(app, changed(numbered(1, 3)));
+        expect((await code(app, review.id, file, from, to)).status).toBe(400);
+      },
+    );
+
+    it("returns 404 for an unknown review and 410 once the repo is gone", async () => {
+      const app = createApp(new MockProvider());
+      const request = changed(numbered(1, 3));
+      const review = await start(app, request);
+      expect((await code(app, "nope", "src/pay.ts")).status).toBe(404);
+      rmSync(request.repoPath, { recursive: true, force: true });
+      expect((await code(app, review.id, "src/pay.ts")).status).toBe(410);
+    });
+
+    it("refuses hosts that aren't loopback, so DNS rebinding can't read source", async () => {
+      const app = createApp(new MockProvider());
+      const review = await start(app, changed(numbered(1, 3)));
+      expect((await code(app, review.id, "src/pay.ts", 1, 1, "http://attacker.example:4317")).status).toBe(403);
+      expect((await code(app, review.id, "src/pay.ts", 1, 1, "http://127.0.0.1:4317")).status).toBe(200);
+    });
+
+    it("keeps code out of decision receipts", async () => {
+      const app = createApp(new MockProvider());
+      const request = changed("const distinctive = charge();\n");
+      const review = await start(app, request);
+      await code(app, review.id, "src/pay.ts");
+      await answer(app, review, "behaviour");
+      const dir = join(request.repoPath, ".git", "viva-decisions");
+      expect(readFileSync(join(dir, readdirSync(dir)[0]!), "utf8")).not.toContain("distinctive");
+    });
   });
 });

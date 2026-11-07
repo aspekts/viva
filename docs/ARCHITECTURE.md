@@ -45,6 +45,8 @@ The daemon deduplicates reviews by a SHA-256 identity of canonical repository pa
 
 `GET /v1/reviews/:id/feedback` exposes missed concepts and question locations from the in-memory review. `viva feedback <id>` formats them as untrusted data for the developer; only an explicit `--agent claude|codex` invokes an agent CLI, passing the feedback on stdin. Detailed feedback expires on daemon restart, with an explicit error; the gate decision remains. A skip leaves fog/mastery unchanged and is retained as `skipped-with-debt` in the local decision receipt.
 
+`GET /v1/reviews/:id/code` shows the UI the lines under discussion. It serves only files in the review's commit range, from the head commit's object store rather than the working tree, and only to loopback hosts. Code stays out of logs, the ledger and decision receipts.
+
 ## Design rules
 
 - **Fail open.** If the daemon is down, the push goes through with a warning. Reliability beats coverage, as in HRT's Blobby talk.

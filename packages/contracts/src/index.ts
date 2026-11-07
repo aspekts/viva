@@ -169,6 +169,24 @@ export const ReviewFeedback = z.object({
 });
 export type ReviewFeedback = z.infer<typeof ReviewFeedback>;
 
+/** Source for one location, read from the review's head commit. Never logged or stored. */
+export const ReviewCode = z.object({
+  reviewId: z.string(),
+  file: z.string(),
+  commit: z.string(),
+  /** Lines in the whole file, not in this response. */
+  totalLines: z.number().int().nonnegative(),
+  lines: z.array(z.object({
+    number: z.number().int().positive(),
+    text: z.string(),
+    /** True for the lines asked about, false for the context around them. */
+    focus: z.boolean(),
+  })),
+  /** True when the location was too long and the end was cut off. */
+  truncated: z.boolean(),
+});
+export type ReviewCode = z.infer<typeof ReviewCode>;
+
 /**
  * One line of the ledger. Mirrors Mabel's data boundary: scores and hashes
  * leave the review, while diffs, transcripts and model output do not.
