@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { Review, ReviewCode, ReviewFeedback, VivaEvent } from "@viva/contracts";
 import { MockProvider } from "@viva/engine";
@@ -8,8 +9,10 @@ import { fixtureRepo } from "../../../packages/engine/src/testing.js";
 import { createApp } from "./app.js";
 
 const repos: string[] = [];
-// Retries, as Windows locks a repo while a fog check's git process is still running in it.
-afterEach(() => { for (const repo of repos.splice(0)) rmSync(repo, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }); });
+// Retries without blocking, as Windows locks a repo while a fog check's git process runs in it.
+afterEach(async () => {
+  await Promise.all(repos.splice(0).map((repo) => rm(repo, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 })));
+});
 
 function fixture(after = "export function pay() { charge(); return 1; }\n", path = "src/pay.ts") {
   const { repo, base, head } = fixtureRepo({ [path]: "export function pay() { return 1; }\n" }, { [path]: after });
@@ -248,6 +251,9 @@ describe("vivad", () => {
   });
 
   describe("live events", () => {
+    /** Keeps fog checks out of tests that aren't about them, so none races cleanup. */
+    const NO_FOG_POLL = { fogPollMs: 60_000 };
+
     /** Reads the event stream directly, as a browser's EventSource would. */
     async function listen(app: ReturnType<typeof createApp>) {
       const response = await app.request("/v1/events");
@@ -284,7 +290,7 @@ describe("vivad", () => {
     }
 
     it("announces a new review, its answers and the fog they change, without any content", async () => {
-      const app = createApp(new MockProvider());
+      const app = createApp(new MockProvider(), NO_FOG_POLL);
       const events = await listen(app);
       const request = fixture("export function pay() { distinctive(); charge(); return 1; }\n");
       const review = await start(app, request);
@@ -299,7 +305,7 @@ describe("vivad", () => {
     });
 
     it("announces skips and hard gates", async () => {
-      const app = createApp(new MockProvider());
+      const app = createApp(new MockProvider(), NO_FOG_POLL);
       const events = await listen(app);
       const review = await start(app, fixture());
       await post(app, `/v1/reviews/${review.id}/skip`, {});
@@ -310,7 +316,7 @@ describe("vivad", () => {
     });
 
     it("tells every listener", async () => {
-      const app = createApp(new MockProvider());
+      const app = createApp(new MockProvider(), NO_FOG_POLL);
       const [first, second] = await Promise.all([listen(app), listen(app)]);
       const review = await start(app, fixture());
       for (const events of [first, second]) {
