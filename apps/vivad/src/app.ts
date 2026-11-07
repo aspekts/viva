@@ -1,4 +1,5 @@
 import { realpath } from "node:fs/promises";
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Answer, FogMap, ReviewCode, ReviewFeedback, ReviewRequest, SavedMemory, VivaEvent, type Review } from "@viva/contracts";
 import {
@@ -14,6 +15,8 @@ import {
   loadChecks,
   loadFogFiles,
   MockProvider,
+  ModelUnavailableError,
+  ResilientProvider,
   readLedger,
   readReviewFile,
   saveMemory,
@@ -30,12 +33,25 @@ import { decisionIdentity, readDecision, writeDecision } from "./decisions.js";
 
 export function createProvider(env: NodeJS.ProcessEnv = process.env): LlmProvider {
   if (env.VIVA_LLM === "gemini") {
-    if (!env.GEMINI_API_KEY || !env.GEMINI_MODEL) throw new Error("set GEMINI_API_KEY and GEMINI_MODEL");
-    return new GeminiProvider(env.GEMINI_API_KEY, env.GEMINI_MODEL, env.GEMINI_FALLBACK_MODEL);
+    const replayOnly = env.VIVA_LLM_REPLAY === "1";
+    const record = env.VIVA_LLM_RECORD === "1";
+    if (!env.GEMINI_MODEL || (!replayOnly && !env.GEMINI_API_KEY)) {
+      throw new Error("set GEMINI_MODEL and (unless replay-only) GEMINI_API_KEY");
+    }
+    // Each model retains GeminiProvider's two attempts, backoff and timeout.
+    // Fallback belongs outside the primary so replay gets first refusal.
+    return new ResilientProvider(new GeminiProvider(env.GEMINI_API_KEY ?? "", env.GEMINI_MODEL), {
+      cacheIdentity: env.GEMINI_MODEL,
+      cacheDir: record || replayOnly ? (env.VIVA_LLM_CACHE_DIR ? resolve(env.VIVA_LLM_CACHE_DIR) : DEFAULT_CACHE_DIR) : undefined,
+      record, replayOnly,
+      fallback: !replayOnly && env.GEMINI_FALLBACK_MODEL
+        ? new GeminiProvider(env.GEMINI_API_KEY!, env.GEMINI_FALLBACK_MODEL) : undefined,
+    });
   }
   return new MockProvider();
 }
 
+const DEFAULT_CACHE_DIR = fileURLToPath(new URL("../../../.viva/cache", import.meta.url));
 const CHECKS_DIR = fileURLToPath(new URL("../../../checks", import.meta.url));
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
@@ -283,6 +299,9 @@ export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 200
   });
 
   app.onError((error, c) => {
+    if (error instanceof ModelUnavailableError) {
+      return c.json({ error: error.message, code: "model-unavailable" }, 503);
+    }
     // Messages can quote model output or session text, so neither leaves here.
     console.error(`vivad: request failed (${error.constructor.name})`);
     return c.json({ error: "internal error" }, 500);

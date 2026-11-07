@@ -57,7 +57,8 @@ const MIN_SESSION_TOKENS = 1_000;
 export function sessionTokenBudget(checks: CheckDefinition[], change: Change, maxInputTokens: number): number {
   const perCheck = Math.floor((maxInputTokens * (1 - PLAN_RESERVE)) / Math.max(checks.length, 1));
   const prompt = Math.max(0, ...checks.map((c) => estimateTokens(c.prompt + SYSTEM_SUFFIX)));
-  const spare = perCheck - prompt - estimateTokens(change.diff);
+  // Measure the diff as the checks receive it, with line numbers.
+  const spare = perCheck - prompt - estimateTokens(numberDiff(change.diff));
   return Math.max(MIN_SESSION_TOKENS, Math.min(spare, Math.floor(perCheck / 2)));
 }
 
