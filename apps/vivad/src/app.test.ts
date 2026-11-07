@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-import { FogMap, Review, ReviewCode, ReviewFeedback, VivaEvent } from "@viva/contracts";
+import { FogMap, Review, ReviewCode, ReviewFeedback, SavedMemory, VivaEvent } from "@viva/contracts";
 import { fixtureRepo, MockProvider, type LlmProvider } from "@viva/engine";
 import * as engine from "@viva/engine";
 import * as decisions from "./decisions.js";
@@ -175,6 +175,47 @@ describe("vivad", () => {
       expect((await post(instance, `/v1/reviews/${retry.id}/skip`, {})).status).toBe(409);
       expect((await post(instance, `/v1/reviews/${retry.id}/answers`, [])).status).toBe(409);
     }
+  });
+
+  describe("decision memory", () => {
+    const remember = (app: ReturnType<typeof createApp>, id: string) => post(app, `/v1/reviews/${id}/memory`, {});
+
+    it("saves a passed explanation only when asked, and never into the ledger", async () => {
+      const app = createApp(new MockProvider());
+      const request = fixture();
+      const review = await start(app, request);
+      expect((await remember(app, review.id)).status).toBe(409);
+      await answer(app, review, "The behaviour charges first on purpose, because send() is idempotent.");
+      expect(existsSync(join(request.repoPath, ".viva"))).toBe(false);
+
+      const response = await remember(app, review.id);
+      expect(response.status).toBe(200);
+      const saved = SavedMemory.parse(await response.json());
+      expect(saved.files).toEqual([".viva/memory/src/pay.ts.md"]);
+      expect(saved.entries[0]).toMatchObject({
+        location: { file: "src/pay.ts" }, person: "Test", commit: request.head,
+        explanation: "The behaviour charges first on purpose, because send() is idempotent.",
+      });
+      expect(readFileSync(join(request.repoPath, ".viva", "memory", "src", "pay.ts.md"), "utf8")).toContain("> The behaviour charges first on purpose");
+      const notes = execFileSync("git", ["notes", "--ref", "refs/notes/viva", "show", request.head], { cwd: request.repoPath, encoding: "utf8" });
+      expect(notes).toContain("\"score\"");
+      expect(notes).not.toMatch(/on purpose|idempotent/);
+
+      // Answers live only in the daemon's memory, so a restart forgets them.
+      const restarted = createApp(new MockProvider());
+      await start(restarted, request);
+      expect((await remember(restarted, review.id)).status).toBe(410);
+    });
+
+    it("refuses to save a failed exam, or a review it doesn't know", async () => {
+      const app = createApp(new MockProvider());
+      const request = fixture();
+      const review = await start(app, request);
+      await answer(app, review, "I don't know");
+      expect((await remember(app, review.id)).status).toBe(409);
+      expect((await remember(app, "nope")).status).toBe(404);
+      expect(existsSync(join(request.repoPath, ".viva"))).toBe(false);
+    });
   });
 
   it("does not reuse a pass for a different developer or commit range", async () => {

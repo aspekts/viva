@@ -1,4 +1,4 @@
-import { Review, ReviewFeedback, type Answer, type ReviewRequest } from "@viva/contracts";
+import { Review, ReviewFeedback, SavedMemory, type Answer, type ReviewRequest } from "@viva/contracts";
 
 export class ApiError extends Error {
   constructor(readonly status: number, message: string) { super(message); }
@@ -38,4 +38,5 @@ export class DaemonClient {
   async answer(id: string, answers: Answer[]) { return Review.parse(await this.json(`/reviews/${encodeURIComponent(id)}/answers`, answers, true)); }
   async skip(id: string) { return Review.parse(await this.json(`/reviews/${encodeURIComponent(id)}/skip`, {}, true)); }
   async feedback(id: string) { return ReviewFeedback.parse(await this.json(`/reviews/${encodeURIComponent(id)}/feedback`)); }
+  async saveMemory(id: string) { return SavedMemory.parse(await this.json(`/reviews/${encodeURIComponent(id)}/memory`, {})); }
 }

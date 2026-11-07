@@ -204,6 +204,38 @@ export const Attestation = z.object({
 });
 export type Attestation = z.infer<typeof Attestation>;
 
+/**
+ * A passed answer the developer chose to keep as project memory, so a later
+ * agent can find out why the code is the way it is. It lives in committed
+ * markdown under `.viva/memory/`, never in the ledger, and is saved only on request.
+ */
+export const MemoryEntry = z.object({
+  id: z.string(),
+  reviewId: z.string(),
+  questionId: z.string(),
+  location: CodeLocation,
+  symbols: z.array(z.string()),
+  /** The decision the question was about. */
+  claim: z.string(),
+  question: z.string(),
+  /** The developer's own words, as answered in the exam. */
+  explanation: z.string(),
+  person: z.string(),
+  at: z.string(),
+  /** The commit the explanation was given against. */
+  commit: z.string(),
+});
+export type MemoryEntry = z.infer<typeof MemoryEntry>;
+
+/** What a save wrote, so the developer sees exactly what is stored and where. */
+export const SavedMemory = z.object({
+  reviewId: z.string(),
+  /** Repo-relative memory files, with forward slashes on every OS. */
+  files: z.array(z.string()),
+  entries: z.array(MemoryEntry),
+});
+export type SavedMemory = z.infer<typeof SavedMemory>;
+
 export const FogNode = z.object({
   id: z.string(),
   file: z.string(),
