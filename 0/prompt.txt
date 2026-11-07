@@ -1,0 +1,23 @@
+Update on pull request #43 (https://github.com/aspekts/viva/pull/43), which T3 Code is watching for you:
+- 1 new comment:
+  - coderabbitai: "> [!WARNING] > ## Review limit reached > > Enable **[usage-based reviews](https://app.coderabbit.ai/settings/billing?tab=usage&orgId=5e453c3d-2efd-415e-9469-1d8021b5a0b7)** in Billing to review now..." https://github.com/aspekts/viva/pull/43#issuecomment-6713778064
+
+Look into each item and act on it as your task requires. This PR stays linked and watched, so do not link, watch, or list it again. End your turn when you are done, and T3 Code wakes you on the next change. When you hand the work back to the user, call unwatch_pull_request first so the thread returns to their inbox.
+
+---
+
+Delegated task node:delegated-task:command%3Amcp%3Af9010e19-eb5e-4ec0-a950-6853cf3b280f%3Adelegate-task%3A309aa2bc-ded0-4ab8-9506-f0f93d0a1e0d (Review #56 question IDs and fencing (Sol)) [completed]:
+**MERGE AFTER FIXES**
+
+- **P1 — cached bypass approvals survive:** [apps/vivad/src/decisions.ts:29](/Users/marcus/.t3/worktrees/viva/t3-95ca14f5/apps/vivad/src/decisions.ts:29). `DECISION_POLICY` remains 2, so an `exam-passed` receipt earned through either old bypass still permits the same push after upgrading. Reproduced through the daemon: a policy-2 receipt returns `done` without another exam. **Fix:** increment the policy and add a regression test invalidating policy-2 passes while retaining failures and skips.
+
+Brief notes:
+
+- Fresh reviews close both bypasses. One answer cannot pass two questions; scores and attestations map to the correct questions/files. Question and rubric injection text stays fenced.
+- Renumbering fits web, terminal, feedback, CLI, memory and fixtures. The grading instructions remain coherent; `evals/exam.ts` uses production grading without parsing the old layout. Gemini quality remains unmeasured offline.
+- No other unfenced model-written prompt content found. Planner claims are fenced; check inputs are fenced. Direction is absent from main; #55 fences its memory input.
+- Both new regression tests fail against the pre-fix implementation.
+- `pnpm install` succeeded. Key-free `pnpm check` **passed**: typechecking, 273 tests, six smoke cases and offline matrix; no `.env` or live calls.
+- Trial merges: `origin/main` clean. `origin/memory-direction-check` conflicts in `packages/engine/src/index.ts` and `packages/engine/src/pipeline/pipeline.test.ts`. Preserve both changes and update #55’s fallback-ID expectation to normalized IDs.
+
+Working tree unchanged.
