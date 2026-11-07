@@ -5,7 +5,7 @@ Ordered by priority. Pick one, branch, and open a PR. Each should stay small eno
 ## Backend (Marcus)
 
 - [ ] **Real model:** run `GeminiProvider` on real diffs and fix it. Then run `pnpm evals` with it.
-- [ ] **Entire session source:** read the `Entire-Checkpoint` trailer and load the prompts and transcript.
+- [x] **Entire session source:** read the `Entire-Checkpoint` trailer and load the prompts and transcript.
 - [ ] **Silent decisions:** tune `checks/silent-decision.md` until it separates requested from unrequested changes on real sessions. Question quality decides whether this project works.
 - [ ] **entire-graph:** use it for blast radius, and measure tokens with and without it.
 - [ ] **Brain:** save spoken reasoning as project memory.
