@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Claim } from "@viva/contracts";
 import { GeminiProvider, loadChecks, type LlmProvider } from "@viva/engine";
 import { fileURLToPath } from "node:url";
-import { cases, checkNames, type EvalCase } from "./cases/index.js";
+import { cases, checkNames, holdoutIds, type EvalCase } from "./cases/index.js";
 import { gradeClaims, hash, matchesClaim, report, runMatrix, safeError, summarize } from "./matrix.js";
 import { main } from "./run.js";
 
@@ -17,6 +17,41 @@ const finding: Claim = {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 describe("fixed claim grading", () => {
+  const asked = cases.find((c) => c.id === "18-requested-default")!;
+  const mixed = cases.find((c) => c.id === "22-mixed-upload-limit")!;
+  const onRequest: Claim = { ...finding, summary: "Caching is on by default", evidence: "fetch default", location: { file: "config/cache.rb", lines: [2, 2] } };
+
+  it("reuses a seeded diff under an intent that asks for it", () => {
+    const source = cases.find((c) => c.id === "05-changed-default")!;
+    expect(asked.after).toEqual(source.after);
+    expect(asked.intent).not.toBe(source.intent);
+  });
+  it("accepts silence or a requested label on requested work, and nothing else", () => {
+    expect(gradeClaims(asked, "silent-decision", [])).toBe("CLEAR");
+    expect(gradeClaims(asked, "behaviour-change", [{ ...onRequest, origin: "requested" }])).toBe("CLEAR");
+    expect(gradeClaims(asked, "silent-decision", [onRequest])).toBe("MISLABEL");
+    expect(gradeClaims(asked, "behaviour-change", [{ ...onRequest, origin: "inferred" }])).toBe("MISLABEL");
+    expect(gradeClaims(asked, "failure-path", [{ ...onRequest, location: { file: "config/other.rb", lines: [9, 9] } }])).toBe("FP");
+  });
+  it("needs the silent change found without mislabelling the requested one in a mixed diff", () => {
+    const silent: Claim = {
+      ...finding, summary: "The upload size limit increases to 100 MB", evidence: "MAX_UPLOAD_BYTES",
+      location: { file: "api/upload.ts", lines: [3, 3] },
+    };
+    const limiter: Claim = { ...finding, summary: "Adds a rate limit", evidence: "limiter", location: { file: "api/upload.ts", lines: [6, 6] } };
+    expect(gradeClaims(mixed, "silent-decision", [silent])).toBe("HIT");
+    expect(gradeClaims(mixed, "silent-decision", [silent, { ...limiter, origin: "requested" }])).toBe("HIT");
+    expect(gradeClaims(mixed, "silent-decision", [silent, limiter])).toBe("MISLABEL");
+    expect(gradeClaims(mixed, "silent-decision", [{ ...limiter, origin: "requested" }])).toBe("MISS");
+  });
+  it("keeps a fixed holdout of existing cases across every kind", () => {
+    const held = cases.filter((c) => holdoutIds.includes(c.id));
+    expect(held).toHaveLength(holdoutIds.length);
+    expect(held.some((c) => c.expected)).toBe(true);
+    expect(held.some((c) => !c.expected && c.requested)).toBe(true);
+    expect(held.some((c) => !c.expected && !c.requested)).toBe(true);
+  });
+
   it("requires the actual seeded claim, not just an exam or unrelated finding", () => {
     expect(gradeClaims(bug, "behaviour-change", [finding])).toBe("HIT");
     expect(gradeClaims(bug, "behaviour-change", [{ ...finding, summary: "Renames the accumulator", evidence: "Renamed local" }])).toBe("MISS");
@@ -38,8 +73,9 @@ describe("fixed claim grading", () => {
     expect(gradeClaims(bug, "failure-path", [finding])).toBe("EXTRA");
   });
   it("covers all bug categories, four model-tested clean refactors, and docs", () => {
-    expect(cases.filter((c) => c.expected)).toHaveLength(12);
-    expect(cases.filter((c) => !c.expected && !c.gate)).toHaveLength(4);
+    expect(cases.filter((c) => c.expected)).toHaveLength(16);
+    expect(cases.filter((c) => !c.expected && !c.gate && !c.requested)).toHaveLength(7);
+    expect(cases.filter((c) => !c.expected && c.requested)).toHaveLength(4);
     expect(cases.filter((c) => c.gate)).toHaveLength(1);
     expect(new Set(cases.map((c) => c.id)).size).toBe(cases.length);
     for (const c of cases.filter((c) => c.expected)) {
@@ -108,6 +144,33 @@ describe("matrix runner", () => {
     const matrix = await runMatrix([bug, clean, cases.at(-1)!], await checks(), provider, "test");
     expect(summarize(matrix, [bug, clean, cases.at(-1)!])).toMatchObject({ recall: "1/1 (100.0%)", falsePositiveRate: "1/1 (100.0%)" });
     expect(checkNames).toHaveLength(3);
+  });
+});
+
+describe("eval pacing and reporting", () => {
+  it("waits between model calls, outside the latency it reports", async () => {
+    const started: number[] = [];
+    const provider: LlmProvider = {
+      id: "paced-test", async complete(request) {
+        started.push(performance.now());
+        return { value: request.schema.parse({ claims: [] }), inputTokens: 1, outputTokens: 1 };
+      },
+    };
+    const matrix = await runMatrix([clean], await checks(), provider, "test", undefined, 25);
+    expect(started[1]! - started[0]!).toBeGreaterThanOrEqual(20);
+    expect(started[2]! - started[1]!).toBeGreaterThanOrEqual(20);
+    expect(matrix.rows[0]!.cells.every((c) => c.latencyMs < 20)).toBe(true);
+  });
+  it("reports tune and holdout scores separately, and requested handling", async () => {
+    const provider: LlmProvider = {
+      id: "test", async complete(request) {
+        return { value: request.schema.parse({ claims: [] }), inputTokens: 1, outputTokens: 1 };
+      },
+    };
+    const selection = cases.filter((c) => ["18-requested-default", "20-requested-timeout"].includes(c.id));
+    const matrix = await runMatrix(selection, await checks(), provider, "test");
+    expect(summarize(matrix, selection).requestedCorrect).toBe("2/2 (100.0%)");
+    expect(report(matrix, selection)).toMatch(/\| tune \|[\s\S]*\| holdout \|/);
   });
 });
 
