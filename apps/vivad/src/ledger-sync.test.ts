@@ -141,10 +141,15 @@ it("bounds a stalled network request and leaves the ledger readable", async () =
 });
 
 
-it("ignores a malformed teammate line after union sync, keeping Fog and reviews available", async () => {
+it.each([
+  ["a line that isn't JSON", () => "not JSON from a teammate"],
+  ["a valid-looking attestation with an unreadable date", () => JSON.stringify({
+    person: "Mallory", file: "src/pay.ts", symbol: "pay", codeHash: "x", score: 1, at: "yesterday", reviewId: "r",
+  })],
+])("ignores %s from a teammate after union sync, keeping Fog and reviews available", async (_, line) => {
   const { a, b, base, head, row } = await team();
   await appendAttestations(b, head, [row("Bob")]);
-  git(a, "notes", "--ref", "viva", "append", "-m", "not JSON from a teammate", head);
+  git(a, "notes", "--ref", "viva", "append", "-m", line(), head);
   expect(await sync(a)).toBe(true);
   expect(await sync(b)).toBe(true);
   expect(await readLedger(b)).toHaveLength(1);

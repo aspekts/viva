@@ -20,7 +20,8 @@ export async function readLedger(repoPath: string): Promise<Attestation[]> {
     for (const row of body.split("\n").filter(Boolean)) {
       try {
         const parsed = Attestation.safeParse(JSON.parse(row));
-        if (parsed.success) entries.push(parsed.data);
+        // An unreadable date would make mastery, and so the whole Fog, NaN.
+        if (parsed.success && Number.isFinite(Date.parse(parsed.data.at))) entries.push(parsed.data);
       } catch { /* Union notes may contain malformed lines from another clone. */ }
     }
   }
