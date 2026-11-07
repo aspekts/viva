@@ -1,0 +1,48 @@
+{
+  "cli_version": "0.13.1",
+  "checkpoint_id": "01M6VZ3RWEERXTYRT1CP8N8JQ1",
+  "session_id": "5cb9ac1b-18bd-498a-8f04-f26be27d817b",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-07T21:37:27.782285Z",
+  "branch": "queue/2-events",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "apps/vivad/src/app.test.ts",
+    "apps/vivad/src/app.ts",
+    "apps/web/src/api/client.test.ts",
+    "apps/web/src/api/client.ts",
+    "apps/web/src/exam/ExamRoom.tsx",
+    "apps/web/src/fog/FogView.tsx",
+    "docs/ARCHITECTURE.md",
+    "packages/contracts/src/index.ts",
+    "packages/engine/src/fog.ts",
+    "packages/engine/src/ledger/notes.ts"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "918bed5408dc",
+  "checkpoint_transcript_start": 159,
+  "transcript_lines_at_start": 159,
+  "compact_transcript_start": 17,
+  "token_usage": {
+    "input_tokens": 26,
+    "cache_creation_tokens": 146795,
+    "cache_read_tokens": 1574640,
+    "output_tokens": 8331,
+    "api_call_count": 12
+  },
+  "redaction": {
+    "replacements": 1,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 1,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
