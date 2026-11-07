@@ -21,7 +21,6 @@ Marcus starts each run, as nothing picks this up automatically. Agents work top 
 
 | Request | Why | Done when | From |
 |---|---|---|---|
-| Endpoint or question field for the code under discussion | Code highlighting in the exam | The exam can show the lines for each question | Contract gaps |
 | Live events for reviews and fog | Fog rolling in live, loading states | The UI updates without polling | Contract gaps |
 | Tell the Fog which repo to map | Live Fog shows the wrong folder | Live Fog shows the pushed repo with no `?repo` set by hand | Contract gaps |
 | Latest review for the Exam room tab | Opening the tab directly | The tab opens the newest review, or a clear empty state | Contract gaps |
@@ -31,3 +30,4 @@ Marcus starts each run, as nothing picks this up automatically. Agents work top 
 
 | Request | PR |
 |---|---|
+| Endpoint for the code under discussion | [PR #8](https://github.com/aspekts/viva/pull/8), awaiting review, not merged. Stacked on PR #5. No file outside the diff is served, and wrong model line numbers aren't detected |

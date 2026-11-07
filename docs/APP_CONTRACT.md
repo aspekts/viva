@@ -87,6 +87,7 @@ All bodies are JSON. Errors are `{ "error": string }`.
 | `POST /v1/reviews/:id/skip` | | `Review` | ✅ Not yet in `client.ts` |
 | `GET /v1/fog?repo=<path>` | | `FogMap` | ✅ |
 | `GET /v1/reviews/:id/feedback` | | `ReviewFeedback` | 🔜 PR #5 |
+| `GET /v1/reviews/:id/code?file=&start=&end=` | | `ReviewCode` | 🔜 PR #8 |
 
 Notes:
 
@@ -133,7 +134,32 @@ Review.grades[]: {
 
 There are at most 3 questions. Claims live in `Review.claims`: match on `question.claimId` to show `summary` and `evidence`. `origin: "silent"` is the headline, as it's something the agent did without being asked.
 
-**Showing the code:** no endpoint returns file contents yet, so the exam can show the path and line numbers only. See [Gaps](#gaps-to-agree).
+**Showing the code** 🔜 PR #8: call `getReviewCode(review.id, question.location)`.
+
+```ts
+ReviewCode: {
+  reviewId: string;
+  file: string;
+  commit: string;       // the review's head commit
+  totalLines: number;   // in the whole file
+  lines: { number: number; text: string; focus: boolean }[];  // focus: the lines asked about
+  truncated: boolean;   // true if a very long location was cut off
+}
+```
+
+You get the asked-for lines plus up to 3 lines of context either side, and at most 200 lines. Render `text` as plain text, as it's untrusted repository content.
+
+Only files in the review's diff are served, from its head commit. **Any error means showing the path and line numbers instead**, which can happen on a normal review:
+
+| Status | Meaning |
+|---|---|
+| 400 | Missing or invalid `file`, `start` or `end` |
+| 403 | The request's `Host` isn't loopback |
+| 404 | Unknown review, or the file isn't in the review at its head commit |
+| 410 | The repo or commits are gone |
+| 422 | Binary, over 1 MiB, or the lines are past the end of the file |
+
+Line numbers come from the model, and the daemon can't tell if they point at the wrong lines. In mock mode, `getReviewCode()` returns `fixtures/mock/code.json` for any location.
 
 ### The Fog (Kay)
 
@@ -181,7 +207,7 @@ Proposed, so Sophina can change it. The React app talks to ElevenLabs directly, 
 
 ## Mock mode
 
-Adding `?mock` loads `fixtures/mock/fog.json` and `fixtures/mock/review.json` through the same schemas as live data. Submitting answers returns a pass.
+Adding `?mock` loads `fixtures/mock/fog.json`, `fixtures/mock/review.json` and, with PR #8, `fixtures/mock/code.json` through the same schemas as live data. Submitting answers returns a pass.
 
 **Known problem:** the exam room also falls back to mock data when there's no `review` in the URL, even without `?mock`. Opening the Exam room tab with the daemon running shows a fake exam, so don't treat it as real.
 
@@ -193,7 +219,7 @@ Marcus to confirm. Until these land, build the UI against the proposed shape beh
 
 | Gap | Blocks | Proposal |
 |---|---|---|
-| **Code for the exam:** no way to fetch the lines under discussion | Code highlighting | 📝 `GET /v1/reviews/:id/code?file=&start=&end=`, or add a snippet to each question |
+| **Code for the exam:** no way to fetch the lines under discussion | Code highlighting | 🔜 PR #8 |
 | **Live progress:** no updates during a review or while fog changes | Fog rolling in live, loading screens | 📝 Server-sent events at `GET /v1/events`. Poll until then |
 | **Latest review:** the Exam room tab has no ID without the URL | Opening the tab directly | 📝 Use the first item from `GET /v1/reviews` |
 | **Which repo:** the UI doesn't know the repo for the Fog | Live Fog | 📝 Take it from the latest review, or a daemon setting |

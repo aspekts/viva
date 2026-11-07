@@ -2,7 +2,7 @@
 
 Your starting point, kept up to date as work lands. For exact API details, see [the app contract](APP_CONTRACT.md).
 
-**Last updated:** Saturday 7 November, 21:20
+**Last updated:** Saturday 7 November, 21:45
 
 ## Start here
 
@@ -55,7 +55,7 @@ Both of you touch `apps/web/src/api/client.ts`, so keep changes there small and 
 1. Build the exam flow in typed form: question, answer, submit, verdict.
 2. Handle every gate result, including blocked, skippable and non-skippable. The contract has a table.
 3. Add the ElevenLabs agent, then the live transcript.
-4. Add code highlighting once the code endpoint lands.
+4. Add code highlighting using `getReviewCode()`, once [PR #8](https://github.com/aspekts/viva/pull/8) lands.
 
 Typing has to keep working throughout, as it's our fallback in a noisy room.
 
@@ -75,7 +75,7 @@ Agents are working on these, and nothing merges without Marcus reviewing it.
 
 | Feature | Unblocks | Status |
 |---|---|---|
-| Code for each question | Code highlighting | Queued |
+| Code for each question | Code highlighting | [PR #8](https://github.com/aspekts/viva/pull/8), awaiting review. `getReviewCode()` works with `?mock` on that branch |
 | Live events | Fog rolling in live | Queued. Poll until then |
 | Fog knows which repo to map | Live Fog | Queued |
 | Latest review | Opening the exam tab directly | Queued |
@@ -115,4 +115,5 @@ Newest first. Add a line when something changes what the frontend can rely on.
 
 | When | What changed |
 |---|---|
+| Sat 21:45 | [PR #8](https://github.com/aspekts/viva/pull/8) open, not merged: `getReviewCode()` and `GET /v1/reviews/:id/code` return the lines for a question. The exam shows them unstyled, in `exam/QuestionCode.tsx`. Sophina, restyle or replace it. Not yet seen in a browser |
 | Sat 21:20 | Handoff, contract and overnight queue created |
