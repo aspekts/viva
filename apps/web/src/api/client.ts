@@ -1,8 +1,9 @@
-import { FogMap, Review, ReviewCode, VivaEvent, type Answer, type CodeLocation } from "@viva/contracts";
+import { FogMap, Review, ReviewCode, SavedMemory, VivaEvent, type Answer, type CodeLocation } from "@viva/contracts";
 import mockCode from "../../../../fixtures/mock/code.json";
 import mockFog from "../../../../fixtures/mock/fog.json";
 import mockEmptyFog from "../../../../fixtures/mock/fog-empty.json";
 import mockHardGate from "../../../../fixtures/mock/review-hard-gate.json";
+import mockMemory from "../../../../fixtures/mock/memory.json";
 import mockSampleReview from "../../../../fixtures/mock/review.json";
 
 /**
@@ -74,6 +75,33 @@ export async function getLatestReview(): Promise<Review | null> {
   return Review.array().parse(await json("/v1/reviews"))[0] ?? null;
 }
 
+/**
+ * Loads one review for the exam: the given ID, or else the newest, which it then
+ * stays on so a later push can't swap the questions mid-exam. Answers that arrive
+ * out of order, or for another review once one is open, are ignored.
+ */
+export function reviewLoader(
+  reviewId: string | null,
+  onLoad: (review: Review | null) => void,
+  onError: (error: Error) => void,
+) {
+  let id = reviewId;
+  let latest = 0;
+  let stopped = false;
+  const load = () => {
+    const call = ++latest;
+    (id ? getReview(id) : getLatestReview()).then(
+      (loaded) => {
+        if (stopped || call !== latest || (id && loaded?.id !== id)) return;
+        if (loaded) id = loaded.id;
+        onLoad(loaded);
+      },
+      (error: Error) => { if (!stopped && call === latest) onError(error); },
+    );
+  };
+  return { load, stop: () => { stopped = true; } };
+}
+
 /** Mock mode has one snippet, so it returns that for any location. */
 export async function getReviewCode(id: string, { file, lines: [start, end] }: CodeLocation): Promise<ReviewCode> {
   if (MOCK) return ReviewCode.parse(mockCode);
@@ -105,4 +133,14 @@ export async function submitAnswers(id: string, answers: Answer[]): Promise<Revi
       body: JSON.stringify(answers),
     }),
   );
+}
+
+/**
+ * Opt-in after a passed exam: saves the developer's answers as markdown under
+ * .viva/memory/ and returns exactly what was written. 409 unless the exam
+ * passed, and 410 once the daemon has restarted and forgotten the answers.
+ */
+export async function saveMemory(id: string): Promise<SavedMemory> {
+  if (MOCK) return SavedMemory.parse(mockMemory);
+  return SavedMemory.parse(await json(`/v1/reviews/${encodeURIComponent(id)}/memory`, { method: "POST" }));
 }

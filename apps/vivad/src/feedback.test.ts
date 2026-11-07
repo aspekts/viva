@@ -2,7 +2,9 @@ import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { spawn } from "node:child_process";
 import { afterEach, expect, it, vi } from "vitest";
-import { handToAgent } from "./feedback.js";
+import { ReviewFeedback } from "@viva/contracts";
+import sample from "../../../fixtures/mock/feedback.json";
+import { formatFeedback, handToAgent } from "./feedback.js";
 
 vi.mock("node:child_process", async (original) => ({ ...await original<typeof import("node:child_process")>(), spawn: vi.fn() }));
 afterEach(() => vi.clearAllMocks());
@@ -35,4 +37,16 @@ it("reports an unavailable opted-in agent rather than silently succeeding", asyn
   const result = handToAgent("codex", "feedback", process.cwd());
   child.emit("error", new Error("ENOENT"));
   await expect(result).rejects.toThrow("ENOENT");
+});
+
+
+it("sanitizes model questions and missed concepts before feedback is printed", () => {
+  const feedback = ReviewFeedback.parse(sample);
+  feedback.items[0]!.ask = "\x1b[2JQuestion\nnext";
+  feedback.items[0]!.missing = ["\x1b]0;owned\x07concept\r\x85"];
+  const text = formatFeedback(feedback);
+  expect(text).toContain("Question\nnext");
+  expect(text).toContain("Missed: concept");
+  expect(text).not.toMatch(/[\x00-\x09\x0b-\x1f\x7f-\x9f]/);
+  expect(text).not.toContain("owned");
 });

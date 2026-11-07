@@ -2,9 +2,10 @@ import React, { useState } from "react";
 import { Box, Text, render, useApp, useInput } from "ink";
 import TextInput from "ink-text-input";
 import type { ReadStream, WriteStream } from "node:tty";
-import type { Answer, Review } from "@viva/contracts";
+import type { Answer, Review, SavedMemory } from "@viva/contracts";
 import { allowsPush } from "@viva/engine";
 import type { DaemonClient } from "./client.js";
+import { terminalText } from "./terminal-text.js";
 
 export function Exam({ initial, client, finish, fail }: {
   initial: Review; client: DaemonClient; finish: (review: Review | null) => void; fail: (error: unknown) => void;
@@ -15,8 +16,10 @@ export function Exam({ initial, client, finish, fail }: {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirmSkip, setConfirmSkip] = useState(false);
+  const [memory, setMemory] = useState<SavedMemory | "failed" | null>(null);
   const question = review.stage === "awaiting-exam" ? review.plan?.questions[answers.length] : undefined;
   const canSkip = review.gate?.skippable !== false && (!review.gate || !allowsPush(review.gate));
+  const canRemember = review.gate?.reason === "exam-passed" && answers.length > 0 && memory === null;
   const done = (value: Review | null) => { finish(value); exit(); };
 
   async function update(action: () => Promise<Review>) {
@@ -26,9 +29,18 @@ export function Exam({ initial, client, finish, fail }: {
     finally { setBusy(false); }
   }
 
+  /** Opt-in only. A failed save never changes the verdict or blocks the push. */
+  async function remember() {
+    setBusy(true);
+    try { setMemory(await client.saveMemory(review.id)); }
+    catch { setMemory("failed"); }
+    finally { setBusy(false); }
+  }
+
   useInput((input, key) => {
     if (key.ctrl && input === "c") return done(null);
     if (busy) return;
+    if (canRemember && input.toLowerCase() === "m") return void remember();
     if (key.escape && canSkip) setConfirmSkip((v) => !v);
     if (confirmSkip && input.toLowerCase() === "y") void update(() => client.skip(review.id));
     if (confirmSkip && input.toLowerCase() === "n") setConfirmSkip(false);
@@ -47,15 +59,18 @@ export function Exam({ initial, client, finish, fail }: {
     <Text bold>Viva · {review.id}</Text>
     {question && <>
       <Text>Question {answers.length + 1}/{review.plan?.questions.length}</Text>
-      <Text color="cyan">{question.location.file}:{question.location.lines.join("–")}</Text>
-      <Text>{question.ask}</Text>
+      <Text color="cyan">{terminalText(question.location.file)}:{question.location.lines.join("–")}</Text>
+      <Text>{terminalText(question.ask)}</Text>
       {!busy && !confirmSkip && <Box><Text>Answer: </Text><TextInput value={text} onChange={setText} onSubmit={submit} /></Box>}
     </>}
     {busy && <Text>Submitting to the daemon…</Text>}
     {review.gate && <>
       <Text bold color={allowsPush(review.gate) ? "green" : "yellow"}>{review.gate.verdict} ({review.gate.reason})</Text>
-      {review.grades.map((g) => <Text key={g.questionId}>{g.questionId}: {g.verdict}{g.missing.length ? ` · missed: ${g.missing.join(", ")}` : ""}</Text>)}
+      {review.grades.map((g) => <Text key={g.questionId}>{terminalText(g.questionId)}: {g.verdict}{g.missing.length ? ` · missed: ${g.missing.map(terminalText).join(", ")}` : ""}</Text>)}
       {!review.gate.skippable && <Text>Hard gate: cannot skip. Resolve the flagged change and push again.</Text>}
+      {canRemember && <Text>m: save your explanation as project memory in .viva/memory/, so future agents know why</Text>}
+      {memory === "failed" && <Text>Could not save your explanation. Your push is unaffected.</Text>}
+      {memory && memory !== "failed" && <Text>{memory.files.length ? `Saved to ${memory.files.join(", ")}. Commit it to share.` : "Nothing to save for this push."}</Text>}
       <Text>Enter to return to git push.</Text>
     </>}
     {canSkip && <Text>{confirmSkip ? "Skip with debt? The push proceeds, but understanding stays unproven. [y/n]" : "Esc: skip with debt"}</Text>}

@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import { Answer, FogMap, ReviewCode, ReviewFeedback, ReviewRequest, VivaEvent, type Review } from "@viva/contracts";
+import { Answer, FogMap, ReviewCode, ReviewFeedback, ReviewRequest, SavedMemory, VivaEvent, type Review } from "@viva/contracts";
 import {
   allowsPush,
   appendAttestations,
@@ -14,6 +14,7 @@ import {
   MockProvider,
   readLedger,
   readReviewFile,
+  saveMemory,
   skipWithDebt,
   startReview,
   submitAnswers,
@@ -51,6 +52,11 @@ export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 200
   const reviews = new Map<string, Review>();
   const byKey = new Map<string, Promise<Review>>();
   const changing = new Set<string>();
+  /**
+   * Answers of passed exams, held in memory only until the developer chooses
+   * whether to save them as project memory. Never logged or written elsewhere.
+   */
+  const passedAnswers = new Map<string, Answer[]>();
   const app = new Hono();
 
   const listeners = new Set<(event: VivaEvent) => void>();
@@ -96,7 +102,8 @@ export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 200
           ledger: await readLedger(request.repoPath),
         });
         if (!receipt) await writeDecision(review);
-        await record(review);
+        void syncLedger(review.request.repoPath);
+      await record(review);
         return review;
       })();
       byKey.set(key, pending);
@@ -127,16 +134,20 @@ export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 200
     const answers = z.array(Answer).parse(await c.req.json());
     const current = reviews.get(c.req.param("id"));
     if (!current) return c.json({ error: "not found" }, 404);
-    if (current.stage !== "awaiting-exam" || changing.has(current.id)) {
+    if (changing.has(current.id)) return c.json({ error: "review submission is already in progress" }, 409);
+    if (current.stage !== "awaiting-exam") {
       return c.json({ error: "review is not awaiting an exam" }, 409);
     }
     changing.add(current.id);
     try {
       const { review, attestations } = await submitAnswers(current, answers, { llm });
-      await appendAttestations(review.request.repoPath, review.request.head, attestations);
-      // Transport never delays the exam response or changes its gate decision.
-      void syncLedger(review.request.repoPath);
+      // Persist the gate before touching the ledger. A failed receipt write is
+      // retryable without duplicate attestations. Once durable, mark completion
+      // before appending so even a ledger failure cannot replay this submission.
       await writeDecision(review);
+      reviews.set(review.id, review);
+      if (review.gate && allowsPush(review.gate)) passedAnswers.set(review.id, answers);
+      await appendAttestations(review.request.repoPath, review.request.head, attestations);
       await record(review);
       return c.json(review);
     } finally {
@@ -147,7 +158,8 @@ export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 200
   app.post("/v1/reviews/:id/skip", async (c) => {
     const current = reviews.get(c.req.param("id"));
     if (!current) return c.json({ error: "not found" }, 404);
-    if (current.gate?.skippable === false || changing.has(current.id)) {
+    if (changing.has(current.id)) return c.json({ error: "review submission is already in progress" }, 409);
+    if (current.gate?.skippable === false) {
       return c.json({ error: "this gate cannot be skipped" }, 409);
     }
     // Skipping an allowed push would overwrite its pass with debt in the receipt.
@@ -161,6 +173,16 @@ export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 200
     } finally {
       changing.delete(current.id);
     }
+  });
+
+  /** Explicit opt-in: saves the passed answers as markdown under .viva/memory/ for the developer to commit. */
+  app.post("/v1/reviews/:id/memory", async (c) => {
+    const review = reviews.get(c.req.param("id"));
+    if (!review) return c.json({ error: "review not found; retry git push after a daemon restart" }, 404);
+    if (review.gate?.reason !== "exam-passed") return c.json({ error: "only a passed exam can be saved as memory" }, 409);
+    const answers = passedAnswers.get(review.id);
+    if (!answers) return c.json({ error: "the explanation expired on daemon restart; nothing was saved" }, 410);
+    return c.json(SavedMemory.parse(await saveMemory(review, answers)));
   });
 
   app.get("/v1/reviews/:id/feedback", (c) => {
@@ -205,6 +227,8 @@ export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 200
 
   /** Only runs while someone is listening. Commits change the fog without any review. */
   app.get("/v1/events", (c) => streamSSE(c, async (stream) => {
+    // Registered before any await, as Hono won't call a handler added after the abort.
+    const closed = new Promise<void>((resolve) => stream.onAbort(resolve));
     const listener = (event: VivaEvent) => { void stream.writeSSE({ data: JSON.stringify(VivaEvent.parse(event)) }); };
     listeners.add(listener);
     fogPoll ??= setInterval(async () => {
@@ -214,13 +238,16 @@ export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 200
       await Promise.all([...fogVersions.keys()].map(checkFog));
       checkingFog = false;
     }, fogPollMs).unref();
-    // Sends the headers now, so the browser knows the stream is open.
-    await stream.write(": connected\n\n");
-    await new Promise<void>((resolve) => stream.onAbort(resolve));
-    listeners.delete(listener);
-    if (listeners.size === 0) {
-      clearInterval(fogPoll);
-      fogPoll = undefined;
+    try {
+      // Sends the headers now, so the browser knows the stream is open.
+      await stream.write(": connected\n\n");
+      if (!stream.aborted) await closed;
+    } finally {
+      listeners.delete(listener);
+      if (listeners.size === 0) {
+        clearInterval(fogPoll);
+        fogPoll = undefined;
+      }
     }
   }));
 
@@ -241,9 +268,9 @@ export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 200
   });
 
   app.onError((error, c) => {
-    // Errors from a provider may contain model/repository text. Never log it.
-    console.error("vivad: request failed");
-    return c.json({ error: "Viva request failed" }, 500);
+    // Messages can quote model output or session text, so neither leaves here.
+    console.error(`vivad: request failed (${error.constructor.name})`);
+    return c.json({ error: "internal error" }, 500);
   });
 
   return app;
