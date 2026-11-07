@@ -46,7 +46,7 @@ function planResponse(user: string): ExamPlan {
 function gradeResponse(user: string): { grades: Grade[] } {
   const answer = /<untrusted name="answer">\n([\s\S]*?)\n<\/untrusted>/.exec(user)?.[1] ?? "";
   const id = /question_id: (\S+)/.exec(user)?.[1] ?? "q1";
-  const mustMention: string[] = JSON.parse(/must_mention: (\[.*\])/.exec(user)?.[1] ?? "[]");
+  const mustMention: string[] = JSON.parse(/<untrusted name="must_mention">\n([\s\S]*?)\n<\/untrusted>/.exec(user)?.[1] ?? "[]");
   const missing = mustMention.filter((m) => !answer.toLowerCase().includes(m.toLowerCase()));
   const score = mustMention.length ? 1 - missing.length / mustMention.length : 0;
   return { grades: [{ questionId: id, verdict: score >= 0.5 ? "approve" : "reject", score, missing }] };
