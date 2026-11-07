@@ -121,7 +121,7 @@ export async function submitAnswers(
 ): Promise<{ review: Review; attestations: Attestation[] }> {
   const config = deps.config ?? defaults;
   const now = deps.now ?? (() => new Date());
-  if (review.stage !== "awaiting-exam" || !review.plan) throw new Error("review is not awaiting an exam");
+  if (review.stage !== "awaiting-exam" || !review.plan?.questions.length) throw new Error("review is not awaiting an exam");
 
   const llm = new MeteredProvider(deps.llm, config.maxInputTokens);
   const grades = await Promise.all(

@@ -153,6 +153,8 @@ export const ReviewDecision = z.object({
   reviewId: z.string().uuid(),
   gate: Gate,
   finishedAt: z.string(),
+  /** Raised when older receipts can't be trusted. Missing on receipts written before policy 2. */
+  policy: z.number().int().positive().optional(),
 });
 export type ReviewDecision = z.infer<typeof ReviewDecision>;
 
