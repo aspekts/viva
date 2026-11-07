@@ -215,6 +215,8 @@ export const FogNode = z.object({
 export type FogNode = z.infer<typeof FogNode>;
 
 export const FogMap = z.object({
+  /** The repo mapped, or null when the daemon doesn't know one yet. Nodes are then empty. */
+  repoPath: z.string().nullable(),
   generatedAt: z.string(),
   debt: z.number().nonnegative(),
   nodes: z.array(FogNode),

@@ -1,10 +1,13 @@
 import { FogMap, Review, ReviewCode, VivaEvent, type Answer, type CodeLocation } from "@viva/contracts";
 import mockCode from "../../../../fixtures/mock/code.json";
 import mockFog from "../../../../fixtures/mock/fog.json";
+import mockEmptyFog from "../../../../fixtures/mock/fog-empty.json";
 import mockReview from "../../../../fixtures/mock/review.json";
 
-/** Mock mode lets the UI run with no daemon: add ?mock to the URL. */
-const MOCK = new URLSearchParams(location.search).has("mock");
+/** Mock mode lets the UI run with no daemon: add ?mock to the URL, and &empty for the empty states. */
+const params = new URLSearchParams(location.search);
+const MOCK = params.has("mock");
+const MOCK_EMPTY = MOCK && params.has("empty");
 
 async function json(path: string, init?: RequestInit): Promise<unknown> {
   const response = await fetch(path, init);
@@ -42,8 +45,10 @@ export function watch(topic: VivaEvent["type"], refresh: () => void): () => void
   };
 }
 
+/** Maps the most recently pushed repo. `repoPath` is null until the daemon has seen a push. */
 export async function getFog(): Promise<FogMap> {
-  return FogMap.parse(MOCK ? mockFog : await json("/v1/fog"));
+  if (MOCK) return FogMap.parse(MOCK_EMPTY ? mockEmptyFog : mockFog);
+  return FogMap.parse(await json("/v1/fog"));
 }
 
 export async function getReview(id: string | null): Promise<Review> {
