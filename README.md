@@ -36,8 +36,13 @@ Commit a change in that repo and `git push`. Risky changes pause the push until 
 |---|---|
 | `pnpm dev` | Runs the daemon and web UI |
 | `pnpm test` | Runs unit and integration tests |
-| `pnpm evals` | Runs the eval matrix |
+| `pnpm evals` | Runs offline mock smoke assertions and the claim matrix |
+| `pnpm evals:live` | Opt-in sequential Gemini claim matrix; skips without a key |
 | `pnpm check` | Runs typecheck, tests and evals. Run this before opening a PR |
+
+See [the recorded live eval results and grading method](docs/EVALS.md). Use
+`pnpm evals:live --report docs/EVALS.md` to write a fresh report. Live failures and
+incomplete runs exit nonzero after reporting; mock quality scores do not gate CI.
 
 ## Who owns what
 
