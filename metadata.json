@@ -1,0 +1,49 @@
+{
+  "cli_version": "0.13.1",
+  "checkpoint_id": "01M6VZ8QCDV9S317XNYHEKY8X2",
+  "strategy": "manual-commit",
+  "branch": "queue/3-fog-repo",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "apps/vivad/src/app.test.ts",
+    "apps/vivad/src/app.ts",
+    "apps/vivad/src/fixtures.test.ts",
+    "apps/web/src/api/client.ts",
+    "apps/web/src/fog/FogView.tsx",
+    "docs/ARCHITECTURE.md",
+    "fixtures/mock/fog-empty.json",
+    "fixtures/mock/fog.json",
+    "packages/contracts/src/index.ts",
+    "packages/engine/src/fog.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12,
+    "cache_creation_tokens": 8756,
+    "cache_read_tokens": 938042,
+    "output_tokens": 7092,
+    "api_call_count": 6
+  },
+  "redaction": {
+    "replacements": 1,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 1,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
