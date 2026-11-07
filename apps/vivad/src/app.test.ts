@@ -341,6 +341,20 @@ describe("vivad", () => {
       await new Promise((resolve) => setTimeout(resolve, 200));
     });
 
+    it("cleans up a listener that disconnects before the stream opens", async () => {
+      const set = vi.spyOn(globalThis, "setInterval");
+      const clear = vi.spyOn(globalThis, "clearInterval");
+      const app = createApp(new MockProvider(), NO_FOG_POLL);
+      const responses = await Promise.all(Array.from({ length: 5 }, () => app.request("/v1/events")));
+      await Promise.all(responses.map((response) => response.body!.cancel()));
+      // All five shared one fog timer, which must stop once the last of them has gone.
+      const timers = set.mock.calls.flatMap((call, i) => (call[1] === NO_FOG_POLL.fogPollMs ? [set.mock.results[i]!.value] : []));
+      expect(timers).toHaveLength(1);
+      await vi.waitFor(() => expect(clear).toHaveBeenCalledWith(timers[0]));
+      set.mockRestore();
+      clear.mockRestore();
+    });
+
     it("stays quiet when a repo hasn't changed", async () => {
       const clear = vi.spyOn(globalThis, "clearInterval");
       const app = createApp(new MockProvider(), { fogPollMs: 20 });
