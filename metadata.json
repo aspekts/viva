@@ -1,0 +1,41 @@
+{
+  "cli_version": "0.13.1",
+  "checkpoint_id": "01M6W2PPRQ8AGSC67N9CVDNG4Z",
+  "strategy": "manual-commit",
+  "branch": "issue-18-decision-memory",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "packages/engine/src/memory/store.test.ts",
+    "packages/engine/src/memory/store.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 30,
+    "cache_creation_tokens": 49831,
+    "cache_read_tokens": 839897,
+    "output_tokens": 6721,
+    "api_call_count": 15
+  },
+  "redaction": {
+    "replacements": 1,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 1,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}

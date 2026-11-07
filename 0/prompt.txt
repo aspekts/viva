@@ -1,0 +1,30 @@
+Act as the implementation sub-agent for this task.
+
+Fix independent-review findings on two stacked PRs in aspekts/viva, a hackathon project (HackTheBurgh, submission Sunday 12:00):
+- #45: branch issue-18-decision-memory, base queue/5-skip. Opt-in saving of passed viva explanations to committed markdown in `.viva/memory/`.
+- #46: branch memory-direction-check, base issue-18-decision-memory. Retrieves memory for the changed files, and a new checks/direction.md asks "is this the right direction?" when a change contradicts it.
+
+Read AGENTS.md, docs/ARCHITECTURE.md, and both PRs (`gh pr view 45`, `gh pr view 46`, and their diffs) first.
+
+Push fix commits to the existing branches. Use normal commits, never force-push, as other branches may build on them. Fix #45 on its branch first, then merge issue-18-decision-memory into memory-direction-check and fix #46 there.
+
+Findings to fix (GPT-6.1 Sol confirmed each with a reproduction):
+
+1. **#45, P2: symlink validation happens after filesystem changes.** `packages/engine/src/memory/store.ts` (around line 142) recursively creates directories before validating the resolved location. With `.viva/memory` symlinked outside the repo, `nested/src` gets created outside it before the code throws. Validate every existing path component, using lstat/realpath, before creating any directory, and refuse symlinked components. Add a regression test with a nested symlink that asserts nothing is created outside the repo. Tests must work on Windows CI: skip the symlink test where symlink creation isn't permitted, with a clear skip reason.
+
+2. **#46, P1: memory from the push itself can replace the decision being checked.** `packages/engine/src/memory/retrieve.ts` (around lines 28–40) reads memory at base and then at head, and overwrites entries by ID. A push that edits a base entry from "check before send" to "send before check", keeping its ID, leaves only the forged version. Newer forged entries can also push historical ones out of the eight-entry limit. Fix: retrieve memory from the push's BASE commit only, so memory added or edited in the same push never takes part in that review. Add tests: an edited entry with the same ID can't replace the base one; a flood of new entries can't push base entries out; new memory in the push is ignored. Update the docs to describe memory as unsigned repository assertions, not verified developer statements.
+
+3. **#46, P1: direction claims can avoid the exam.** `packages/engine/src/pipeline/review.ts` (around lines 86–94) removes the mastery suppression for direction claims but still applies the ordinary risk threshold. The prompt allows `requested` origin, so a requested reversal with zero blast radius scores 0.5 and ends as `approve / low-risk` with no questions. Make direction claims always selected for the exam, within maxQuestions, prioritised sensibly against other risky claims, rather than depending on the risk threshold. Add a pipeline test, and an eval case for an explicitly requested reversal that must still be examined.
+
+4. **Context only, don't fix here:** an empty exam plan recording a pass is fixed separately in PR #47 (branch fix/empty-exam-pass), which will reach these branches when they're integrated with main. Don't duplicate that fix.
+
+Also: one existing test, `apps/vivad/src/exam.test.ts` "takes typed answers question-by-question…", flakes under load, independently of these changes. Don't chase it unless it blocks you.
+
+Rules:
+- Run `pnpm install` and `env -u VIVA_LLM -u GEMINI_API_KEY pnpm check` after each fix. It must pass with no key and no network. Never make live model calls, and never copy any .env.
+- Don't change hard gates or fail-open behaviour.
+- Don't merge PRs, and don't watch PRs. Don't kill processes you didn't start.
+- Update each PR body with an "After independent review" section listing what was fixed and how.
+- End commits with: `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`
+
+Final message: what changed, anything uncertain, then for each PR: PR <full URL>, head <SHA>, checks and reviews <state>.
