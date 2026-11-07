@@ -85,7 +85,6 @@ Build these against mock data and the shapes proposed in the contract. If a fina
 
 ## Good to know
 
-- **The exam tab can show fake data.** With no `review` in the URL, it falls back to sample data even when the daemon is running.
 - **Only two states are visible:** `awaiting-exam` and `done`. Use a generic loading state.
 - **Reviews vanish when the daemon restarts.** Show a "run `git push` again" message on a 404.
 - **Grading takes a moment,** so disable buttons while a request is in flight.
@@ -115,5 +114,6 @@ Newest first. Add a line when something changes what the frontend can rely on.
 
 | When | What changed |
 |---|---|
+| Sat 22:20 | Typed exam flow ([#12](https://github.com/aspekts/viva/issues/12)): the exam tab shows an empty state with no `review` in the URL, instead of sample data. `client.ts` now throws `ApiError` with a `status`, and mock submit grades blank answers as a fail |
 | Sat 21:25 | [PR #8](https://github.com/aspekts/viva/pull/8) open, not merged: `getReviewCode()` and `GET /v1/reviews/:id/code` return the lines for a question. The exam shows them unstyled, in `exam/QuestionCode.tsx`. Sophina, restyle or replace it. Not yet seen in a browser |
 | Sat 21:20 | Handoff, contract and overnight queue created |

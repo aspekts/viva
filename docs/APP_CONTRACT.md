@@ -209,7 +209,7 @@ Proposed, so Sophina can change it. The React app talks to ElevenLabs directly, 
 
 Adding `?mock` loads `fixtures/mock/fog.json`, `fixtures/mock/review.json` and, with PR #8, `fixtures/mock/code.json` through the same schemas as live data. Submitting answers returns a pass.
 
-**Known problem:** the exam room also falls back to mock data when there's no `review` in the URL, even without `?mock`. Opening the Exam room tab with the daemon running shows a fake exam, so don't treat it as real.
+Without `?mock` and without a `review` in the URL, the exam room shows an empty state instead of sample data. In mock mode, submitting blank answers returns a failed review with the missed rubric points, and answered questions return a pass.
 
 To test a state, add a fixture, for example `review-failed.json`, and keep it valid against the schema.
 
