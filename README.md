@@ -4,7 +4,7 @@
 
 Viva shows which parts of an AI-written codebase no human understands, then questions you on the riskiest parts before you ship them.
 
-Built at HackTheBurgh XIII. See [the design](docs/DESIGN.md), [the architecture](docs/ARCHITECTURE.md) and [the task list](docs/TASKS.md).
+Built at HackTheBurgh XIII. See [the design](docs/DESIGN.md), [the architecture](docs/ARCHITECTURE.md), [the app contract](docs/APP_CONTRACT.md), [the frontend handoff](docs/FRONTEND_HANDOFF.md) and [the task list](docs/TASKS.md).
 
 ## Quick start
 
@@ -56,8 +56,13 @@ The hook reads answers from the controlling console (`/dev/tty` on macOS/Linux, 
 | `pnpm viva exam <reviewId>` | Opens an existing exam or verdict in the terminal |
 | `pnpm viva feedback <reviewId> [--agent claude\|codex]` | Prints missed concepts; optionally hands them to the named agent |
 | `pnpm test` | Runs unit and integration tests |
-| `pnpm evals` | Runs the eval matrix |
+| `pnpm evals` | Runs offline mock smoke assertions and the claim matrix |
+| `pnpm evals:live` | Opt-in sequential Gemini claim matrix; skips without a key |
 | `pnpm check` | Runs typecheck, tests and evals. Run this before opening a PR |
+
+See [the recorded live eval results and grading method](docs/EVALS.md). Use
+`pnpm evals:live --report docs/EVALS.md` to write a fresh report. Live failures and
+incomplete runs exit nonzero after reporting; mock quality scores do not gate CI.
 
 ## Who owns what
 

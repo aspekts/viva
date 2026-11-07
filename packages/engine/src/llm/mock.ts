@@ -1,5 +1,5 @@
 import type { CheckResult, ExamPlan, Grade } from "@viva/contracts";
-import type { LlmProvider, LlmRequest, LlmResult } from "./provider.js";
+import { estimateTokens, type LlmProvider, type LlmRequest, type LlmResult } from "./provider.js";
 
 const RISKY = /\b(charge|delete|drop|timeout|retry|idempot\w*|auth\w*|token|lock|await|or|not|null)\b/i;
 
@@ -58,6 +58,6 @@ export class MockProvider implements LlmProvider {
 
   async complete<T>({ name, user, schema }: LlmRequest<T>): Promise<LlmResult<T>> {
     const body = name.startsWith("check:") ? checkResponse(user) : name === "plan" ? planResponse(user) : gradeResponse(user);
-    return { value: schema.parse(body), inputTokens: Math.ceil(user.length / 4), outputTokens: 50 };
+    return { value: schema.parse(body), inputTokens: estimateTokens(user), outputTokens: 50 };
   }
 }
