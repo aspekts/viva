@@ -69,6 +69,61 @@ See [the recorded live eval results and grading method](docs/EVALS.md). Use
 reviews. Live failures and incomplete runs exit nonzero after reporting, and a 429 exits with
 code 75; mock quality scores do not gate CI.
 
+## Demo day
+
+Record the exact demo once while quota is available. Set these variables in the
+shell launching the daemon (`export NAME=value` on macOS/Linux;
+`$env:NAME = "value"` in Windows PowerShell):
+
+| Variable | Recording | Offline replay |
+|---|---|---|
+| `VIVA_LLM` | `gemini` | `gemini` |
+| `GEMINI_MODEL` | Your live model name | Same model name |
+| `GEMINI_API_KEY` | Supply privately | Not needed |
+| `GEMINI_FALLBACK_MODEL` | Optional second live model | Not used |
+| `VIVA_LLM_RECORD` | `1` | Unset |
+| `VIVA_LLM_REPLAY` | Unset | `1` |
+| `VIVA_LLM_CACHE_DIR` | Absolute path to this Viva checkout's `.viva/cache` | Same path |
+
+Start `pnpm exec tsx apps/vivad/src/server.ts` and `pnpm dev:web`. Exercise the
+chosen commit range and answer every question with the exact stage transcript.
+Restart with the offline settings to rehearse with **zero model calls**. Use a
+fresh disposable copy of the same commits, without completed decision receipts,
+to exercise the exam again; keep the original cache path. **Remove `origin`
+(`git remote remove origin`) or point it at a disposable remote in that copy
+before rehearsing.** Replayed grades create real attestations, and ledger sync
+may publish them. Don't delete real gate decisions. Changed prompts, answers,
+schemas or model names miss the cache, so rehearse the whole path, including
+grading. Existing exact matches are reused; remove only the disposable cache to
+record afresh.
+
+Caching is **opt-in**: only record mode writes; record or replay enables reads.
+Otherwise there is no cache I/O. Without an explicit path, `.viva/cache` is
+resolved from the daemon module to **this Viva checkout**, regardless of the
+directory the daemon was launched from. An explicit `VIVA_LLM_CACHE_DIR` overrides
+that location; use only a cache you control.
+Keys hash provider, model, request name, prompts and schema. Files contain only
+validated results and token counts, and replay revalidates with zod. They can
+contain private code and answers: `.viva/cache/` is gitignored; never commit,
+log, share or put it in the ledger. Delete it after the demo. Private file
+permissions are used where supported.
+
+On a miss, Gemini retains two attempts per model, 800/1600 ms backoff and a
+12-second timeout per attempt. Quota/429/RESOURCE_EXHAUSTED, network errors,
+timeout or transient server failures try replay again, then
+`GEMINI_FALLBACK_MODEL`, then a labelled `model-unavailable` HTTP 503. Fallback output is not cached as primary output.
+Replay retains token counts under `MeteredProvider`; failed-call usage is unknown.
+Retries can exceed the CLI's 15-second deadline: infrastructure failure warns
+and fails open, with no passing exam or mastery credit. Offline replay requires
+**word-for-word identical answers**. A cache miss returns HTTP 503, so the hook
+warns and the push goes through **unexamined**; it never calls a model.
+
+`/v1/health` reports cumulative use since startup: `gemini+replay`,
+`gemini+fallback`, or `gemini+unavailable` (`replay-only` before an offline hit).
+There is no automatic mock fallback. For an explicitly simulated demo, use
+`VIVA_LLM=mock` (health says `mock`) or open `http://localhost:5173/?mock` for the
+existing frontend fixtures. Mock keyword grading is not evidence of understanding.
+
 ## Who owns what
 
 | Area | Owner | Where |
