@@ -8,7 +8,8 @@ import { fixtureRepo } from "../../../packages/engine/src/testing.js";
 import { createApp } from "./app.js";
 
 const repos: string[] = [];
-afterEach(() => { for (const repo of repos.splice(0)) rmSync(repo, { recursive: true, force: true }); });
+// Retries, as Windows locks a repo while a fog check's git process is still running in it.
+afterEach(() => { for (const repo of repos.splice(0)) rmSync(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); });
 
 function fixture(after = "export function pay() { charge(); return 1; }\n", path = "src/pay.ts") {
   const { repo, base, head } = fixtureRepo({ [path]: "export function pay() { return 1; }\n" }, { [path]: after });
