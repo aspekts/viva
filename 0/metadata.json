@@ -1,0 +1,42 @@
+{
+  "cli_version": "0.13.1",
+  "checkpoint_id": "01M6W3CS98N6GQNXZQKSAS8E61",
+  "session_id": "5cb9ac1b-18bd-498a-8f04-f26be27d817b",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-07T22:52:17.805433Z",
+  "branch": "fix/deflake-exam-test",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "apps/vivad/src/exam.test.ts"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "64c14be74898",
+  "checkpoint_transcript_start": 1318,
+  "transcript_lines_at_start": 1318,
+  "compact_transcript_start": 185,
+  "token_usage": {
+    "input_tokens": 40,
+    "cache_creation_tokens": 27322,
+    "cache_read_tokens": 6748639,
+    "output_tokens": 16464,
+    "api_call_count": 18
+  },
+  "redaction": {
+    "replacements": 18,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 18,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 17
+  }
+}

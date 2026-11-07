@@ -1,0 +1,78 @@
+Delegated task node:delegated-task:command%3Amcp%3Af9010e19-eb5e-4ec0-a950-6853cf3b280f%3Adelegate-task%3Ae7e7e394-1a37-4c1b-8967-7de4e775254c (Review #45 #46 memory (Sol)) [completed]:
+**#45 — MERGE AFTER FIXES**  
+Reviewed `27141f7`.
+
+Blocking findings, ranked:
+
+1. **P1, inherited: an empty exam records a pass.** `packages/contracts/src/index.ts:65` allows zero questions; `packages/engine/src/pipeline/aggregate.ts:5` turns zero grades into `endorse / exam-passed`. Confirmed end-to-end on the stack: one risky claim, zero questions, successful pass. Reject empty or unrelated plans and guard empty grading, preserving infrastructure fail-open without recording mastery or a passed exam. Existing fix `26d0c1e` addresses this but is absent from both reviewed heads.
+
+2. **P2: symlink validation happens after filesystem mutation.** `packages/engine/src/memory/store.ts:142` recursively creates directories before validating their resolved location. Confirmed: symlinking `.viva/memory` outside the repository creates `nested/src` outside it, then throws. No markdown file was written in this reproduction. Validate existing path components before creating directories; add a nested-symlink regression test.
+
+Non-blocking: saving is explicit, restricted to passed answers about changed files, and separate from ledger/decision receipts. Traversal segments and symlink file targets are rejected. Memory remains editable repository text, not authenticated human testimony; its documentation should acknowledge that.
+
+Checks: install succeeded. Requested `pnpm check` **failed**: 133 tests passed, one terminal-exam test failed at `apps/vivad/src/exam.test.ts:28`. That file passed independently afterward; separate mock evals passed **6/6**. Potential timing failure, not a clean full run.
+
+Conflict status against main `82d2272`: **one conflicted file**, `apps/vivad/src/app.test.ts`. Straightforward combination of imports and independent tests.
+
+**#46 — MERGE AFTER FIXES**  
+Reviewed `775bc06`.
+
+Blocking findings, ranked:
+
+1. **P1: head memory can replace the historical decision being checked.** `packages/engine/src/memory/retrieve.ts:28–40` reads base then head and overwrites entries by ID. Confirmed: changing a base entry from “check before send” to “send before check,” retaining its ID, leaves only the replacement. Forged newer entries can also crowd historical entries out of the eight-entry limit. No prompt injection is needed. **Cheap fix:** retrieve from base only; do not admit same-push memory into that review. Describe unsigned memory as repository assertions, not verified developer statements.
+
+2. **P1: direction claims can silently avoid the exam.** `packages/engine/src/pipeline/review.ts:86–94` removes mastery suppression but retains ordinary risk filtering. The prompt explicitly permits `requested` origin. Confirmed with a schema-parsed provider stub: a requested reversal with zero blast radius scores **0.5**, yielding `approve / low-risk` without questions. Select direction claims explicitly for examination rather than relying solely on risk thresholds; add an eval for an explicitly requested reversal.
+
+3. **Inherited blockers:** the empty-exam pass and save-directory issue above remain present.
+
+Non-blocking: memory enters the direction prompt through `untrusted()` and model access uses `LlmProvider` with zod parsing. Missing/corrupt memory falls back safely. No relevant memory means **no direction-model call**, not zero total calls. Regex filtering does not establish provenance or comprehensively exclude instructions. I found no new route through memory paths to bypass `viva-config-changed`; protected-path checks still run first.
+
+Checks: install and requested `pnpm check` **passed**: **144 tests, 9/9 mock evals**. These establish wiring, not live-model judgement. No live calls or `.env` copying.
+
+Conflict status: trial merge with main produced **five conflicted files**:
+
+- `apps/vivad/src/app.test.ts`
+- `evals/run.ts`
+- `packages/engine/src/llm/mock.ts`
+- `packages/engine/src/pipeline/checks.ts`
+- `packages/engine/src/pipeline/review.ts`
+
+Moderate integration work: preserve main’s bounded session context/token budgeting and eval runner while adding memory retrieval and direction evals. Rerun checks after resolution.
+
+Both trial merges were aborted, scratch branches deleted, and the original branch restored cleanly. No commits, pushes, GitHub comments, approvals, or merges were made.
+
+---
+
+Delegated task node:delegated-task:command%3Amcp%3Af9010e19-eb5e-4ec0-a950-6853cf3b280f%3Adelegate-task%3Ad074ee4a-300f-44f0-abbe-02d35a7dccda (Bound Entire transcript memory (Sol)) [completed]:
+PR https://github.com/aspekts/viva/pull/48, head baad310591b13f9e0a59ca07c87ce8fbaa0a8504, checks and reviews: local check passed with one worker (148 tests and mock evals); default runs hit an existing terminal-test race; CI running; no reviews.
+
+Delegated task node:delegated-task:command%3Amcp%3Af9010e19-eb5e-4ec0-a950-6853cf3b280f%3Adelegate-task%3Aee3fbdac-3d22-419d-85b3-004ec7f809cf (Re-land #7 tuning on main (Opus)) [completed]:
+I opened PR #49, "Re-land check tuning from #7", against `main`. I didn't merge or watch anything. `env -u VIVA_LLM -u GEMINI_API_KEY pnpm check` passes with no key and no network: typecheck, 173 tests and 6/6 smoke evals. #47's three regression tests and #7's planner test pass.
+
+The branch `reland/check-tuning` starts from `origin/fix/empty-exam-pass`. `origin/tuning/silent-decision` is merged in with a merge commit, so #7's commits show in the history.
+
+**Conflicts resolved:**
+- **`checks.ts`:** kept both `estimateTokens` (from main, #4) and `numberDiff` (from #7).
+- **`plan.ts`:** kept #7's planner, which asks one question per real claim and takes the location from the claim. After that filter, #47's rule still applies: if no usable question remains, `planExam` throws. It never returns an empty plan.
+- **`docs/ARCHITECTURE.md`:** kept main's Entire session reader text. Both sides had an outdated evals line ("the session source returns nothing" and "`pnpm evals` still uses the mock provider"); I replaced them with #7's `evals:live` line.
+- **`apps/vivad/src/app.test.ts`:** `main` moved on after #47 was branched (#35 and #36 landed), and the branch conflicted with it. I merged current `main` in. The only conflict was an import line, and I kept both imports (`existsSync` and `rm`).
+
+**One clash fixed beyond the conflicts:** since #4, the session budget is sized by subtracting the diff's estimated tokens. Since #7, the checks receive the diff with line numbers added, which is longer. The budget now measures the numbered diff, so a large diff can't leave the session more room than the checks have. I added a test for this and confirmed it fails without the fix.
+
+**Eval behaviour:** I ran the offline eval matrix on #7's tip and on this branch. Every cell gave the same verdict. Only the mock token counts differ, because #4 changed the estimate to 3.5 characters per token. I added a short note to `docs/EVALS.md` saying the live numbers come from #7's earlier runs and weren't re-run. It also says that `--exam` now counts a plan with no usable questions as an error rather than an exam.
+
+**Uncertain:**
+- If #47 is updated to resolve its own conflict with `main` in `app.test.ts`, this branch may need another small merge.
+- The live eval numbers weren't re-run, so how they look on today's `main` is untested.
+- There are no prompt changes beyond #7's.
+
+PR https://github.com/aspekts/viva/pull/49, head 291b87e6366a4c7f20324d674f3afc81c16af0db, checks and reviews: CI pending (ubuntu and windows queued, macOS in progress), mergeable, no reviews yet.
+
+Delegated task node:delegated-task:command%3Amcp%3Af9010e19-eb5e-4ec0-a950-6853cf3b280f%3Adelegate-task%3Add9b6f4a-a6e8-4211-b1f5-646befb19927 (Harden terminal exam path (Sol)) [completed]:
+Fixed submission deadlines, symlinked CLI invocation, terminal escapes, duplicate-attestation ordering, and misleading 409 messages. Added regression tests.
+
+`pnpm install` and key-free `pnpm check` passed: 158 tests plus mock evals.
+
+Unverified: live-model latency and Windows console behavior. Other requested follow-ups are documented in the PR. Not merged or watched.
+
+PR https://github.com/aspekts/viva/pull/51, head 4b4391f5c2b211e2eb6634b7080cb0579b794cf4, checks and reviews CI queued/running; no reviews.
