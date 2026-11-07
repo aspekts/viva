@@ -1,0 +1,26 @@
+Act as the implementation sub-agent for this task.
+
+Re-land PR #7's check tuning onto main in aspekts/viva, a hackathon project (HackTheBurgh, submission Sunday 12:00).
+
+What happened: PR #7 ("Tune checks and exam questions against live evals", branch tuning/silent-decision, head 6693762) was merged into evals/live-matrix 40 seconds after evals/live-matrix (#3) had already been merged into main. So #7's content (about 950 lines across 16 files: checks/failure-path.md, checks/silent-decision.md, evals/exam.ts, evals cases/matrix/run, packages/engine pipeline plan.ts/checks.ts/grade.ts, sources/git.ts, docs/EVALS.md, docs/ARCHITECTURE.md, README) never reached main, although GitHub shows #7 as merged.
+
+Also, PR #47 (branch fix/empty-exam-pass, not yet merged) fixes a gate bypass that an independent review found in #7's planner. A plan with no usable questions, including when every question references an unknown claim ID, used to grade as `exam-passed`. #47 makes planExam drop questions about claims it wasn't given and throw when none remain. It also makes submitAnswers refuse an empty plan, and makes aggregateGrades throw on no grades.
+
+Task:
+1. Create branch `reland/check-tuning` from `origin/fix/empty-exam-pass`. Merge `origin/tuning/silent-decision` into it with a merge commit, so the history shows #7's commits.
+2. Resolve conflicts. Known ones:
+   - **packages/engine/src/pipeline/checks.ts:** imports and helpers. Keep both `estimateTokens` (from main, PR #4's Entire reader) and `numberDiff` (from #7).
+   - **docs/ARCHITECTURE.md:** keep accurate text for both the Entire session reader and the eval/tuning work.
+   - **packages/engine/src/pipeline/plan.ts:** #7's planner changes versus #47's validation. Keep #7's behaviour and #47's invariant: no usable questions for the given claims means throw, never return an empty plan.
+   Also check other conflicts and semantic clashes, e.g. #7's code assuming the pre-#4 or pre-#5 shape of review.ts, app.ts or the session source. Main now includes #3, #4, #5 and #8.
+3. Run `pnpm install` and `env -u VIVA_LLM -u GEMINI_API_KEY pnpm check`. It must pass with no key and no network. Never make live model calls or copy any .env. Make sure #47's regression tests still pass. If #7's eval cases or matrix now behave differently on main, e.g. because #4 changed the session context, fix or document it honestly rather than silencing tests.
+4. Open a PR to `main`, titled "Re-land check tuning from #7". In the body:
+   - why the re-land was needed
+   - that it includes #47 (merge #47 first; the diff shrinks once it lands)
+   - how each conflict was resolved
+   - that #7's live eval numbers in docs/EVALS.md came from earlier live runs and weren't re-run here
+   Don't merge anything, and don't watch PRs. Don't kill processes you didn't start.
+
+Rules: AGENTS.md applies, especially the hard gates, data boundary, fail-open and untrusted() rules. Make no new prompt changes beyond what #7 already did. End commits with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. End the PR body with `🤖 Generated with [Claude Code](https://claude.com/claude-code)`.
+
+Final message: conflicts resolved and anything uncertain, then: PR <full URL>, head <SHA>, checks and reviews <state>.
