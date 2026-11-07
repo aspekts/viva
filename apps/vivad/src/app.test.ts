@@ -1,16 +1,19 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { FogMap, Review, ReviewCode, ReviewFeedback, SavedMemory, VivaEvent } from "@viva/contracts";
-import { MockProvider } from "@viva/engine";
-import { fixtureRepo } from "../../../packages/engine/src/testing.js";
+import { fixtureRepo, MockProvider, type LlmProvider } from "@viva/engine";
+import * as engine from "@viva/engine";
+import * as decisions from "./decisions.js";
 import { createApp } from "./app.js";
+import { decisionIdentity } from "./decisions.js";
 
 const repos: string[] = [];
 // Retries without blocking, as Windows locks a repo while a fog check's git process runs in it.
 afterEach(async () => {
+  vi.restoreAllMocks();
   await Promise.all(repos.splice(0).map((repo) => rm(repo, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 })));
 });
 
@@ -67,7 +70,7 @@ describe("vivad", () => {
 
     const dir = join(request.repoPath, ".git", "viva-decisions");
     const receipt = JSON.parse(readFileSync(join(dir, readdirSync(dir)[0]!), "utf8"));
-    expect(Object.keys(receipt).sort()).toEqual(["finishedAt", "gate", "key", "reviewId"]);
+    expect(Object.keys(receipt).sort()).toEqual(["finishedAt", "gate", "key", "policy", "reviewId"]);
     expect(JSON.stringify(receipt)).not.toMatch(/charges|behaviour|src\/pay|transcript|mustMention/);
   });
 
@@ -93,6 +96,59 @@ describe("vivad", () => {
       post(app, `/v1/reviews/${review.id}/answers`, payload),
     ]);
     expect(results.map((r) => r.status).sort()).toEqual([200, 409]);
+  });
+
+  it("does not append attestations when the receipt write fails, then retries once", async () => {
+    const app = createApp(new MockProvider());
+    const request = fixture();
+    const review = await start(app, request);
+    const dir = join(request.repoPath, ".git", "viva-decisions");
+    writeFileSync(dir, "block receipt directory creation");
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const payload = review.plan!.questions.map((q) => ({ questionId: q.id, mode: "typed", transcript: "behaviour" }));
+    expect((await post(app, `/v1/reviews/${review.id}/answers`, payload)).status).toBe(500);
+    expect(await engine.readLedger(request.repoPath)).toEqual([]);
+    expect((await start(app, request)).stage).toBe("awaiting-exam");
+    rmSync(dir);
+    const completed = await answer(app, review, "behaviour");
+    const ledger = await engine.readLedger(request.repoPath);
+    expect(ledger).toHaveLength(review.plan!.questions.length);
+    expect((await post(app, `/v1/reviews/${review.id}/answers`, payload)).status).toBe(409);
+    expect(await engine.readLedger(request.repoPath)).toEqual(ledger);
+    expect((await start(createApp(new MockProvider()), request)).gate).toEqual(completed.gate);
+    log.mockRestore();
+  });
+
+  it("retains a durable decision and never replays the ledger after an append failure", async () => {
+    const app = createApp(new MockProvider());
+    const request = fixture();
+    const review = await start(app, request);
+    const append = vi.spyOn(engine, "appendAttestations").mockRejectedValue(new Error("ledger unavailable"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const payload = review.plan!.questions.map((q) => ({ questionId: q.id, mode: "typed", transcript: "no idea" }));
+    expect((await post(app, `/v1/reviews/${review.id}/answers`, payload)).status).toBe(500);
+    expect((await start(app, request)).gate?.reason).toBe("exam-failed");
+    expect((await post(app, `/v1/reviews/${review.id}/answers`, payload)).status).toBe(409);
+    expect((await start(createApp(new MockProvider()), request)).gate?.reason).toBe("exam-failed");
+    expect(append).toHaveBeenCalledTimes(1);
+  });
+
+  it("describes in-progress submissions accurately for both answers and skip", async () => {
+    const app = createApp(new MockProvider());
+    const review = await start(app, fixture());
+    const write = decisions.writeDecision;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const receipt = vi.spyOn(decisions, "writeDecision").mockImplementation(async (review) => { await held; await write(review); });
+    const submission = answer(app, review, "behaviour");
+    try {
+      await vi.waitFor(() => expect(receipt).toHaveBeenCalled());
+      for (const action of ["answers", "skip"]) {
+        const response = await post(app, `/v1/reviews/${review.id}/${action}`, action === "answers" ? [] : {});
+        expect(response.status).toBe(409);
+        expect(await response.json()).toEqual({ error: "review submission is already in progress" });
+      }
+    } finally { release(); await submission; }
   });
 
   it("persists explicit skip-with-debt without recording mastery", async () => {
@@ -394,6 +450,20 @@ describe("vivad", () => {
       await events.close();
     });
 
+    it("cleans up a listener that disconnects before the stream opens", async () => {
+      const set = vi.spyOn(globalThis, "setInterval");
+      const clear = vi.spyOn(globalThis, "clearInterval");
+      const app = createApp(new MockProvider(), NO_FOG_POLL);
+      const responses = await Promise.all(Array.from({ length: 5 }, () => app.request("/v1/events")));
+      await Promise.all(responses.map((response) => response.body!.cancel()));
+      // All five shared one fog timer, which must stop once the last of them has gone.
+      const timers = set.mock.calls.flatMap((call, i) => (call[1] === NO_FOG_POLL.fogPollMs ? [set.mock.results[i]!.value] : []));
+      expect(timers).toHaveLength(1);
+      await vi.waitFor(() => expect(clear).toHaveBeenCalledWith(timers[0]));
+      set.mockRestore();
+      clear.mockRestore();
+    });
+
     it("stays quiet when a repo hasn't changed", async () => {
       const clear = vi.spyOn(globalThis, "clearInterval");
       const app = createApp(new MockProvider(), { fogPollMs: 20 });
@@ -481,5 +551,57 @@ describe("vivad", () => {
     const skipped = await post(app, `/v1/reviews/${review.id}/skip`, {});
     expect(skipped.status).toBe(200);
     expect(Review.parse(await skipped.json()).gate?.reason).toBe("skipped-with-debt");
+  });
+
+  it("keeps error text out of the log and the response", async () => {
+    const canary = "CANARY-quoted-from-the-transcript";
+    const failing: LlmProvider = {
+      id: "failing",
+      complete: async () => {
+        throw new Error(`could not parse model output: ${canary}`);
+      },
+    };
+    const { repo, base, head } = fixtureRepo({ "a.ts": "export const a = 1;\n" }, { "a.ts": "export const a = 2;\n" });
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const response = await createApp(failing).request("/v1/reviews", {
+      method: "POST",
+      body: JSON.stringify({ repoPath: repo, base, head, person: "p" }),
+    });
+
+    expect(response.status).toBe(500);
+    expect(await response.text()).not.toContain(canary);
+    expect(JSON.stringify(log.mock.calls)).not.toContain(canary);
+    log.mockRestore();
+  });
+
+  it("fails open rather than recording a pass when the exam plan has no questions", async () => {
+    const mock = new MockProvider();
+    const emptyPlan: LlmProvider = {
+      id: "empty-plan",
+      complete: async (request) => request.name === "plan"
+        ? { value: request.schema.parse({ questions: [] }), inputTokens: 1, outputTokens: 1 }
+        : mock.complete(request),
+    };
+    const request = fixture();
+    const response = await post(createApp(emptyPlan), "/v1/reviews", request);
+    expect(response.status).toBe(500);
+    expect(existsSync(join(request.repoPath, ".git", "viva-decisions"))).toBe(false);
+  });
+
+  it.each([
+    ["re-examines a pass recorded before policy 2, as it may have asked nothing", "exam-passed", "approve", "awaiting-exam"],
+    ["keeps a failure recorded before policy 2", "exam-failed", "reject", "done"],
+  ])("%s", async (_, reason, verdict, stage) => {
+    const request = fixture();
+    const { key, dir } = await decisionIdentity(request);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, `${key}.json`), JSON.stringify({
+      key, reviewId: "5f0c6a8e-6f3b-4c55-9d43-2b4d7a1f9e10", finishedAt: new Date().toISOString(),
+      gate: { verdict, reason, skippable: true },
+    }));
+    const review = await start(createApp(new MockProvider()), request);
+    expect(review.stage).toBe(stage);
+    if (stage === "done") expect(review.gate?.reason).toBe(reason);
   });
 });

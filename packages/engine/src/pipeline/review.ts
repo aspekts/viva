@@ -4,11 +4,11 @@ import { defaults, type VivaConfig } from "../config.js";
 import { masteryFor } from "../ledger/mastery.js";
 import { MeteredProvider, type LlmProvider } from "../llm/provider.js";
 import { relevantMemory } from "../memory/retrieve.js";
-import { blobHash, loadChange } from "../sources/git.js";
+import { blobHash, git, loadChange } from "../sources/git.js";
 import type { BlastRadiusSource } from "../sources/graph.js";
 import { resolveSession, type SessionSource } from "../sources/session.js";
 import { aggregateGrades } from "./aggregate.js";
-import { runChecks, type CheckDefinition } from "./checks.js";
+import { runChecks, sessionTokenBudget, type CheckDefinition } from "./checks.js";
 import { gradeAnswer } from "./grade.js";
 import { scanForInjection } from "./injection.js";
 import { planExam } from "./plan.js";
@@ -33,6 +33,20 @@ const finish = (review: Review, gate: Gate, now: Date): Review => ({
   gate,
   finishedAt: now.toISOString(),
 });
+
+const IDENTIFIER = /^[\w$.:#-]{1,120}$/;
+
+/**
+ * Model output has read the transcript, and this is its one route to the ledger.
+ * So only a file that exists and a name found in it are kept, never free text.
+ */
+async function ledgerKey(repoPath: string, head: string, file: string, symbol?: string) {
+  const codeHash = await blobHash(repoPath, head, file).catch(() => null);
+  if (!codeHash) return { file: "unknown", symbol: "unknown", codeHash: "unknown" };
+  const content = await git(repoPath, ["cat-file", "blob", codeHash]).catch(() => "");
+  const named = symbol !== undefined && IDENTIFIER.test(symbol) && content.includes(symbol);
+  return { file, symbol: named ? symbol : file, codeHash };
+}
 
 /** Runs a review up to the exam. Stops early wherever a cheaper step can decide. */
 export async function startReview(request: ReviewRequest, deps: ReviewDeps): Promise<Review> {
@@ -60,7 +74,11 @@ export async function startReview(request: ReviewRequest, deps: ReviewDeps): Pro
   const injection = scanForInjection(change.diff);
   if (injection) return finish(review, injection, now());
 
-  const session = await resolveSession(deps.session, request.repoPath, request.head, request.intent);
+  const session = await resolveSession(deps.session, request.repoPath, request.head, request.intent, {
+    base: request.base,
+    files: change.files.map((f) => f.path),
+    maxTokens: sessionTokenBudget(deps.checks, change, config.maxInputTokens),
+  });
   // Deterministic, before any model call. Read at base only, so the push can't write the memory it is judged by.
   // Missing or broken memory must never block a push.
   const memory = await (deps.memory ?? relevantMemory)(request.repoPath, request.base, change.files.map((f) => f.path))
@@ -119,7 +137,7 @@ export async function submitAnswers(
 ): Promise<{ review: Review; attestations: Attestation[] }> {
   const config = deps.config ?? defaults;
   const now = deps.now ?? (() => new Date());
-  if (review.stage !== "awaiting-exam" || !review.plan) throw new Error("review is not awaiting an exam");
+  if (review.stage !== "awaiting-exam" || !review.plan?.questions.length) throw new Error("review is not awaiting an exam");
 
   const llm = new MeteredProvider(deps.llm, config.maxInputTokens);
   const grades = await Promise.all(
@@ -133,12 +151,10 @@ export async function submitAnswers(
     grades.map(async (grade) => {
       const question = review.plan?.questions.find((q) => q.id === grade.questionId);
       const claim = review.claims.find((c) => c.id === question?.claimId);
-      const file = question?.location.file ?? "";
+      const key = await ledgerKey(review.request.repoPath, review.request.head, question?.location.file ?? "", claim?.symbols[0]);
       return {
         person: review.request.person,
-        symbol: claim?.symbols[0] ?? file,
-        file,
-        codeHash: await blobHash(review.request.repoPath, review.request.head, file).catch(() => "unknown"),
+        ...key,
         score: grade.score,
         at: now().toISOString(),
         reviewId: review.id,
