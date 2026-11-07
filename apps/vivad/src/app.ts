@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { Answer, FogMap, ReviewCode, ReviewFeedback, ReviewRequest, VivaEvent, type Review } from "@viva/contracts";
 import {
+  allowsPush,
   appendAttestations,
   codeWindow,
   computeFog,
@@ -145,6 +146,8 @@ export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 200
     if (current.gate?.skippable === false || changing.has(current.id)) {
       return c.json({ error: "this gate cannot be skipped" }, 409);
     }
+    // Skipping an allowed push would overwrite its pass with debt in the receipt.
+    if (current.gate && allowsPush(current.gate)) return c.json({ error: "this push is already allowed" }, 409);
     const review = skipWithDebt(current);
     changing.add(current.id);
     try {

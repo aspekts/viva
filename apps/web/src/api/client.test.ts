@@ -121,3 +121,33 @@ describe("reviews", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 });
+
+describe("skipReview", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("posts the skip and returns the new review", async () => {
+    const sample = JSON.parse(JSON.stringify((await import("../../../../fixtures/mock/review.json")).default));
+    const fetch = vi.fn(async () => new Response(JSON.stringify({ ...sample, stage: "done", gate: { verdict: "approve", reason: "skipped-with-debt", skippable: true } })));
+    vi.stubGlobal("fetch", fetch);
+    const { skipReview } = await client("");
+    expect((await skipReview("r1")).gate?.reason).toBe("skipped-with-debt");
+    expect(fetch).toHaveBeenCalledWith("/v1/reviews/r1/skip", { method: "POST" });
+  });
+
+  it("surfaces the daemon's refusal of a hard gate as a 409", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: "this gate cannot be skipped" }), { status: 409 })));
+    const { ApiError, skipReview } = await client("");
+    const refusal = await skipReview("r1").catch((e: unknown) => e);
+    expect(refusal).toBeInstanceOf(ApiError);
+    expect(refusal).toMatchObject({ status: 409 });
+  });
+
+  it("skips the mock exam, and refuses the mock hard gate", async () => {
+    vi.stubGlobal("fetch", vi.fn());
+    expect((await (await client("?mock")).skipReview("mock-review")).gate?.reason).toBe("skipped-with-debt");
+    const hard = await client("?mock&hard");
+    expect((await hard.getLatestReview())?.gate).toMatchObject({ reason: "injection-suspected", skippable: false });
+    await expect(hard.skipReview("mock-hard-gate")).rejects.toMatchObject({ status: 409 });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+});
