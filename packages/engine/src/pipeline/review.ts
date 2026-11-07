@@ -3,7 +3,7 @@ import type { Answer, Attestation, Claim, Gate, Review, ReviewRequest } from "@v
 import { defaults, type VivaConfig } from "../config.js";
 import { masteryFor } from "../ledger/mastery.js";
 import { MeteredProvider, type LlmProvider } from "../llm/provider.js";
-import { blobHash, loadChange } from "../sources/git.js";
+import { blobHash, git, loadChange } from "../sources/git.js";
 import type { BlastRadiusSource } from "../sources/graph.js";
 import { resolveSession, type SessionSource } from "../sources/session.js";
 import { aggregateGrades } from "./aggregate.js";
@@ -30,6 +30,20 @@ const finish = (review: Review, gate: Gate, now: Date): Review => ({
   gate,
   finishedAt: now.toISOString(),
 });
+
+const IDENTIFIER = /^[\w$.:#-]{1,120}$/;
+
+/**
+ * Model output has read the transcript, and this is its one route to the ledger.
+ * So only a file that exists and a name found in it are kept, never free text.
+ */
+async function ledgerKey(repoPath: string, head: string, file: string, symbol?: string) {
+  const codeHash = await blobHash(repoPath, head, file).catch(() => null);
+  if (!codeHash) return { file: "unknown", symbol: "unknown", codeHash: "unknown" };
+  const content = await git(repoPath, ["cat-file", "blob", codeHash]).catch(() => "");
+  const named = symbol !== undefined && IDENTIFIER.test(symbol) && content.includes(symbol);
+  return { file, symbol: named ? symbol : file, codeHash };
+}
 
 /** Runs a review up to the exam. Stops early wherever a cheaper step can decide. */
 export async function startReview(request: ReviewRequest, deps: ReviewDeps): Promise<Review> {
@@ -121,12 +135,10 @@ export async function submitAnswers(
     grades.map(async (grade) => {
       const question = review.plan?.questions.find((q) => q.id === grade.questionId);
       const claim = review.claims.find((c) => c.id === question?.claimId);
-      const file = question?.location.file ?? "";
+      const key = await ledgerKey(review.request.repoPath, review.request.head, question?.location.file ?? "", claim?.symbols[0]);
       return {
         person: review.request.person,
-        symbol: claim?.symbols[0] ?? file,
-        file,
-        codeHash: await blobHash(review.request.repoPath, review.request.head, file).catch(() => "unknown"),
+        ...key,
         score: grade.score,
         at: now().toISOString(),
         reviewId: review.id,

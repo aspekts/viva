@@ -45,7 +45,11 @@ Each step stops the review if it can decide, so the cheapest step wins.
 
 ## Known gaps
 
-- The Entire adapter and entire-graph are stubs. The session source returns nothing, and blast radius uses `git grep`.
+- entire-graph is a stub, and blast radius uses `git grep`.
+- The Entire session reader only sees checkpoints in local git refs. Commits linked after the fact with `entire session attach`, and checkpoints stored in another repo, return no session. Subagent transcripts are not read.
+- A push mixing agent and hand-written commits gets context for the agent commits only, so a hand-written change can look unrequested.
+- Session text is fenced with `untrusted()` but the injection scan only covers the diff, so a hostile transcript relies on that fence alone.
+- Traces don't exist yet. When they do, they must store stage names and token counts only, as `LlmRequest.user` holds the transcript.
 - `pnpm evals` still uses the mock provider, so check quality on real diffs is unmeasured.
 - The fog is per file, with blast radius at 0. Symbol-level needs entire-graph.
 - Reviews are held in memory, so restarting the daemon loses them.

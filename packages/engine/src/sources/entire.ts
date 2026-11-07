@@ -66,7 +66,7 @@ function readBlock(block: z.infer<typeof Block>, files: string[], reasoning: Pas
   if (block.type === "text" || block.type === "thinking") {
     const text = (block.text ?? block.thinking ?? "").trim();
     if (!text) return undefined;
-    return { text: clip(text, MAX_PASSAGE_CHARS), relevance: mentionsChange(text, files) ? 2 : 0 };
+    return { text: clip(text, MAX_PASSAGE_CHARS), relevance: mentionsChange(text, files) ? 3 : 1 };
   }
   if (block.type !== "tool_use" || !block.name) return undefined;
   const path = block.input?.file_path ?? block.input?.path;
@@ -83,13 +83,7 @@ function readBlock(block: z.infer<typeof Block>, files: string[], reasoning: Pas
 }
 
 /** Streams a transcript, so the size of a session never sets the size of the heap. */
-async function readPassages(
-  repoPath: string,
-  object: string,
-  start: number,
-  files: string[],
-  timeout: number,
-): Promise<Passage[]> {
+async function forEachLine(repoPath: string, object: string, timeout: number, onLine: (line: string, index: number) => void) {
   const child = spawn("git", ["cat-file", "blob", object], {
     cwd: repoPath,
     stdio: ["ignore", "pipe", "ignore"],
@@ -99,33 +93,52 @@ async function readPassages(
     child.once("error", reject);
     child.once("close", resolve);
   });
-
-  const passages: Passage[] = [];
-  let reasoning: Passage | undefined;
   const consume = async () => {
     let index = 0;
-    for await (const line of createInterface({ input: child.stdout, crlfDelay: Infinity })) {
-      index += 1;
-      if (index <= start || !line.includes('"assistant"')) continue;
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(line);
-      } catch {
-        continue;
-      }
-      const record = TranscriptRecord.safeParse(parsed);
-      if (!record.success || record.data.type !== "assistant") continue;
-      for (const block of record.data.content ?? record.data.message?.content ?? []) {
-        const passage = readBlock(block, files, reasoning);
-        if (!passage) continue;
-        passages.push(passage);
-        if (!passage.text.startsWith("[")) reasoning = passage;
-      }
-    }
+    for await (const line of createInterface({ input: child.stdout, crlfDelay: Infinity })) onLine(line, index++);
   };
   const [code] = await Promise.all([exited, consume()]);
   if (code !== 0) throw new Error("could not read transcript");
+}
+
+function parseRecord(line: string, type: "assistant" | "user") {
+  if (!line.includes(`"${type}"`)) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(line);
+  } catch {
+    return [];
+  }
+  const record = TranscriptRecord.safeParse(parsed);
+  if (!record.success || record.data.type !== type) return [];
+  return record.data.content ?? record.data.message?.content ?? [];
+}
+
+async function readPassages(repoPath: string, object: string, start: number, files: string[], timeout: number) {
+  const passages: Passage[] = [];
+  let reasoning: Passage | undefined;
+  await forEachLine(repoPath, object, timeout, (line, index) => {
+    if (index < start) return;
+    for (const block of parseRecord(line, "assistant")) {
+      const passage = readBlock(block, files, reasoning);
+      if (!passage) continue;
+      passages.push(passage);
+      if (block.type !== "tool_use") reasoning = passage;
+    }
+  });
   return passages;
+}
+
+/** A commit later in a turn has no `prompt.txt`, as the prompt went to an earlier one. */
+async function readLastPrompt(repoPath: string, object: string, timeout: number): Promise<string> {
+  let prompt = "";
+  await forEachLine(repoPath, object, timeout, (line) => {
+    const text = parseRecord(line, "user")
+      .map((block) => block.text ?? "")
+      .join("\n");
+    if (text.trim()) prompt = text;
+  });
+  return prompt;
 }
 
 async function checkpointIds(repoPath: string, head: string, base?: string): Promise<string[]> {
@@ -165,19 +178,22 @@ async function locate(repoPath: string, id: string): Promise<{ root: string; ses
  */
 async function readSession(repoPath: string, root: string, files: string[], deadline: number) {
   const meta = SessionMeta.parse(await readJson(repoPath, `${root}metadata.json`));
-  const prompts = await git(repoPath, ["cat-file", "blob", `${root}prompt.txt`]).catch(() => "");
+  const remaining = () => Math.max(1, deadline - Date.now());
+  const compact = `${root}transcript.jsonl`;
+
+  const prompts =
+    (await git(repoPath, ["cat-file", "blob", `${root}prompt.txt`]).catch(() => null)) ??
+    (await readLastPrompt(repoPath, compact, remaining()).catch(() => ""));
 
   const transcripts = [
-    { file: "full.jsonl", start: meta.checkpoint_transcript_start ?? 0 },
-    { file: "transcript.jsonl", start: meta.compact_transcript_start ?? 0 },
+    { object: `${root}full.jsonl`, start: meta.checkpoint_transcript_start ?? 0 },
+    { object: compact, start: meta.compact_transcript_start ?? 0 },
   ];
-  for (const { file, start } of transcripts) {
-    const timeout = deadline - Date.now();
-    if (timeout <= 0) break;
-    const passages = await readPassages(repoPath, `${root}${file}`, start, files, timeout).catch(() => []);
-    if (passages.length > 0) return { prompts: prompts.split(PROMPT_SEPARATOR), passages };
+  let passages: Passage[] = [];
+  for (const { object, start } of transcripts) {
+    if (passages.length === 0) passages = await readPassages(repoPath, object, start, files, remaining()).catch(() => []);
   }
-  return { prompts: prompts.split(PROMPT_SEPARATOR), passages: [] };
+  return { prompts: prompts.split(PROMPT_SEPARATOR), passages };
 }
 
 /** Shares room equally, and short texts hand what they do not need to long ones. */
