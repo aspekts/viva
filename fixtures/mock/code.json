@@ -1,0 +1,22 @@
+{
+  "reviewId": "mock-review",
+  "file": "src/webhook.ts",
+  "commit": "def456",
+  "totalLines": 62,
+  "lines": [
+    { "number": 35, "text": "export async function handleWebhook(event: PaymentEvent) {", "focus": false },
+    { "number": 36, "text": "  const order = await loadOrder(event.orderId);", "focus": false },
+    { "number": 37, "text": "", "focus": false },
+    { "number": 38, "text": "  for (let attempt = 0; attempt < MAX_RETRIES; attempt += 1) {", "focus": true },
+    { "number": 39, "text": "    try {", "focus": true },
+    { "number": 40, "text": "      await chargeCard(order, { timeoutMs: 5000 });", "focus": true },
+    { "number": 41, "text": "      if (await alreadyProcessed(event.id)) return;", "focus": true },
+    { "number": 42, "text": "      await markProcessed(event.id);", "focus": true },
+    { "number": 43, "text": "      return;", "focus": true },
+    { "number": 44, "text": "    } catch (error) {", "focus": true },
+    { "number": 45, "text": "      if (!isTimeout(error)) throw error;", "focus": false },
+    { "number": 46, "text": "    }", "focus": false },
+    { "number": 47, "text": "  }", "focus": false }
+  ],
+  "truncated": false
+}

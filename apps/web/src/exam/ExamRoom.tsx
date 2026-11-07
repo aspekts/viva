@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Answer, Review } from "@viva/contracts";
 import { getReview, submitAnswers } from "../api/client";
+import { QuestionCode } from "./QuestionCode";
 
 /** Typed exam first. Sophina adds the ElevenLabs voice session behind the same answers. */
 export function ExamRoom({ reviewId }: { reviewId: string | null }) {
@@ -35,6 +36,7 @@ export function ExamRoom({ reviewId }: { reviewId: string | null }) {
           <small>
             {q.location.file}:{q.location.lines[0]}
           </small>
+          <QuestionCode reviewId={review.id} location={q.location} />
           <textarea
             value={drafts[q.id] ?? ""}
             onChange={(e) => setDrafts({ ...drafts, [q.id]: e.target.value })}

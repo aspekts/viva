@@ -1,7 +1,8 @@
 import { fileURLToPath } from "node:url";
-import { Answer, ReviewFeedback, ReviewRequest, type Review } from "@viva/contracts";
+import { Answer, ReviewCode, ReviewFeedback, ReviewRequest, type Review } from "@viva/contracts";
 import {
   appendAttestations,
+  codeWindow,
   computeFog,
   entireSource,
   GeminiProvider,
@@ -10,6 +11,7 @@ import {
   loadFogFiles,
   MockProvider,
   readLedger,
+  readReviewFile,
   skipWithDebt,
   startReview,
   submitAnswers,
@@ -28,6 +30,14 @@ export function createProvider(env: NodeJS.ProcessEnv = process.env): LlmProvide
 }
 
 const CHECKS_DIR = fileURLToPath(new URL("../../../checks", import.meta.url));
+
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
+
+const CodeQuery = z.object({
+  file: z.string().min(1),
+  start: z.coerce.number().int().positive(),
+  end: z.coerce.number().int().positive(),
+}).refine(({ start, end }) => start <= end);
 
 /**
  * The daemon only tracks reviews and serves the UI. Reviews stay on this
@@ -130,6 +140,28 @@ export function createApp(llm: LlmProvider = createProvider()) {
         }] : [];
       }),
     }));
+  });
+
+  app.get("/v1/reviews/:id/code", async (c) => {
+    // A page that rebinds its DNS to this port must not be able to read source.
+    if (!LOOPBACK_HOSTS.has(new URL(c.req.url).hostname)) return c.json({ error: "local requests only" }, 403);
+    const review = reviews.get(c.req.param("id"));
+    if (!review) return c.json({ error: "review not found; retry git push to refresh it after a daemon restart" }, 404);
+    const query = CodeQuery.safeParse(c.req.query());
+    if (!query.success) return c.json({ error: "expected file, start and end" }, 400);
+    const { file, start, end } = query.data;
+    const { repoPath, base, head } = review.request;
+    const source = await readReviewFile(repoPath, base, head, file).catch(() => null);
+    if (!source) return c.json({ error: "this review's commits are no longer available" }, 410);
+    if ("refused" in source) {
+      return source.refused === "not-in-review"
+        ? c.json({ error: "file is not in this review at its head commit" }, 404)
+        : c.json({ error: `file cannot be shown: ${source.refused}` }, 422);
+    }
+    const window = codeWindow(source.text, start, end);
+    if (!window) return c.json({ error: "lines are outside this file" }, 422);
+    c.header("cache-control", "no-store");
+    return c.json(ReviewCode.parse({ reviewId: review.id, file, commit: head, ...window }));
   });
 
   app.get("/v1/fog", async (c) => {
