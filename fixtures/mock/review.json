@@ -1,0 +1,30 @@
+{
+  "id": "mock-review",
+  "request": { "repoPath": "/demo", "base": "abc123", "head": "def456", "person": "Marcus", "intent": "add retries to the payment webhook" },
+  "stage": "awaiting-exam",
+  "claims": [
+    {
+      "id": "silent-decision-1", "check": "silent-decision", "summary": "Moved idempotency check after the charge call",
+      "origin": "silent", "symbols": ["handleWebhook", "chargeCard"],
+      "location": { "file": "src/webhook.ts", "lines": [38, 44] },
+      "evidence": "Not in the prompt; the agent reordered these at step 7",
+      "risk": 4.2, "inputs": { "blastRadius": 6, "originWeight": 2, "untested": 1, "mastery": 0 }
+    }
+  ],
+  "plan": {
+    "questions": [
+      {
+        "id": "q1", "claimId": "silent-decision-1",
+        "ask": "Say the first attempt charges the card, then times out. What happens on the retry?",
+        "mustMention": ["charged twice", "check runs after the charge"],
+        "followUpIfVague": "Look at line 41. Walk me through the order.",
+        "location": { "file": "src/webhook.ts", "lines": [38, 44] }
+      }
+    ]
+  },
+  "grades": [],
+  "gate": null,
+  "usage": { "inputTokens": 3200, "outputTokens": 410, "llmCalls": 4 },
+  "startedAt": "2026-11-07T18:00:00.000Z",
+  "finishedAt": null
+}

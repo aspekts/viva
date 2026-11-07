@@ -1,0 +1,28 @@
+{
+  "name": "viva",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.11.0",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "dev": "concurrently -n vivad,web -c blue,magenta \"pnpm --filter @viva/vivad dev\" \"pnpm --filter @viva/web dev\"",
+    "dev:api": "pnpm --filter @viva/vivad dev",
+    "dev:web": "pnpm --filter @viva/web dev",
+    "test": "vitest run",
+    "typecheck": "pnpm -r typecheck",
+    "evals": "tsx evals/run.ts",
+    "viva": "tsx apps/vivad/src/cli.ts",
+    "check": "pnpm typecheck && pnpm test && pnpm evals"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "concurrently": "^9.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0"
+  },
+  "dependencies": {
+    "@viva/contracts": "workspace:*",
+    "@viva/engine": "workspace:*"
+  }
+}
