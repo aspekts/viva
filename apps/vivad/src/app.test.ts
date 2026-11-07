@@ -343,7 +343,7 @@ describe("vivad", () => {
     });
 
     it("tells the Fog to refetch when a push switches back to an unchanged repo", async () => {
-      const app = createApp(new MockProvider());
+      const app = createApp(new MockProvider(), NO_FOG_POLL);
       const first = fixture();
       await answer(app, await start(app, first), "behaviour");
       await start(app, fixture());
