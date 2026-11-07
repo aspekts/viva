@@ -1,0 +1,11 @@
+{
+  "generatedAt": "2026-11-07T18:00:00.000Z",
+  "debt": 4210,
+  "nodes": [
+    { "id": "src/webhook.ts", "file": "src/webhook.ts", "symbol": null, "size": 1800, "blastRadius": 6, "fog": 0.95, "knownBy": [] },
+    { "id": "src/payments.ts", "file": "src/payments.ts", "symbol": null, "size": 2400, "blastRadius": 9, "fog": 0.2, "knownBy": [{ "person": "Marcus", "mastery": 0.8 }] },
+    { "id": "src/refunds.ts", "file": "src/refunds.ts", "symbol": null, "size": 900, "blastRadius": 2, "fog": 0.55, "knownBy": [{ "person": "Kay", "mastery": 0.45 }] },
+    { "id": "src/auth.ts", "file": "src/auth.ts", "symbol": null, "size": 1200, "blastRadius": 12, "fog": 0.1, "knownBy": [{ "person": "Sophina", "mastery": 0.9 }, { "person": "Pedro", "mastery": 0.6 }] },
+    { "id": "src/retry.ts", "file": "src/retry.ts", "symbol": null, "size": 600, "blastRadius": 4, "fog": 1, "knownBy": [] }
+  ]
+}

@@ -1,0 +1,182 @@
+/**
+ * The contract between the engine, the daemon and the UI.
+ * Change this first, then update fixtures/mock so the frontend keeps working.
+ */
+import { z } from "zod";
+
+/** Mabel-style verdicts, ordered from worst to best. */
+export const VERDICTS = ["reject", "defer", "approve", "endorse"] as const;
+export const Verdict = z.enum(VERDICTS);
+export type Verdict = z.infer<typeof Verdict>;
+
+/** Worst wins: any reject blocks, however many approvals surround it. */
+export function worstVerdict(verdicts: readonly Verdict[]): Verdict {
+  const rank = (v: Verdict) => VERDICTS.indexOf(v);
+  return verdicts.reduce<Verdict>((w, v) => (rank(v) < rank(w) ? v : w), "endorse");
+}
+
+/** Where a decision came from, relative to what the human asked for. */
+export const Origin = z.enum(["requested", "inferred", "silent"]);
+export type Origin = z.infer<typeof Origin>;
+
+export const CodeLocation = z.object({
+  file: z.string(),
+  lines: z.tuple([z.number().int().positive(), z.number().int().positive()]),
+});
+export type CodeLocation = z.infer<typeof CodeLocation>;
+
+/** One decision found in a change. Produced by a check, ranked by risk. */
+export const Claim = z.object({
+  id: z.string(),
+  check: z.string(),
+  summary: z.string(),
+  origin: Origin,
+  symbols: z.array(z.string()),
+  location: CodeLocation,
+  evidence: z.string(),
+});
+export type Claim = z.infer<typeof Claim>;
+
+export const RiskInputs = z.object({
+  blastRadius: z.number().min(0),
+  originWeight: z.number().min(0),
+  untested: z.number().min(0).max(1),
+  mastery: z.number().min(0).max(1),
+});
+export type RiskInputs = z.infer<typeof RiskInputs>;
+
+export const RankedClaim = Claim.extend({ risk: z.number().min(0), inputs: RiskInputs });
+export type RankedClaim = z.infer<typeof RankedClaim>;
+
+/** Model output for a check. Parsed before use, never trusted as prose. */
+export const CheckResult = z.object({ claims: z.array(Claim.omit({ id: true, check: true })) });
+export type CheckResult = z.infer<typeof CheckResult>;
+
+export const Question = z.object({
+  id: z.string(),
+  claimId: z.string(),
+  ask: z.string(),
+  mustMention: z.array(z.string()).min(1),
+  followUpIfVague: z.string(),
+  location: CodeLocation,
+});
+export type Question = z.infer<typeof Question>;
+
+export const ExamPlan = z.object({ questions: z.array(Question).max(3) });
+export type ExamPlan = z.infer<typeof ExamPlan>;
+
+export const AnswerMode = z.enum(["voice", "typed"]);
+export const Answer = z.object({
+  questionId: z.string(),
+  transcript: z.string(),
+  mode: AnswerMode,
+});
+export type Answer = z.infer<typeof Answer>;
+
+/** The grader sees the transcript and rubric only. Accent and fluency cannot reach it. */
+export const Grade = z.object({
+  questionId: z.string(),
+  verdict: Verdict,
+  score: z.number().min(0).max(1),
+  missing: z.array(z.string()),
+});
+export type Grade = z.infer<typeof Grade>;
+
+export const ReviewStage = z.enum([
+  "collecting",
+  "prechecks",
+  "injection-scan",
+  "checks",
+  "planning",
+  "awaiting-exam",
+  "grading",
+  "done",
+]);
+export type ReviewStage = z.infer<typeof ReviewStage>;
+
+/** Why the gate decided what it did. Safe to log: it holds no diff or prose. */
+export const GateReason = z.enum([
+  "docs-only",
+  "low-risk",
+  "earned-trust",
+  "too-large",
+  "injection-suspected",
+  "viva-config-changed",
+  "exam-passed",
+  "exam-failed",
+  "skipped-with-debt",
+  "pipeline-error",
+]);
+export type GateReason = z.infer<typeof GateReason>;
+
+export const Gate = z.object({
+  verdict: Verdict,
+  reason: GateReason,
+  /** False for hard gates, which config and "skip with debt" cannot bypass. */
+  skippable: z.boolean(),
+});
+export type Gate = z.infer<typeof Gate>;
+
+export const ReviewRequest = z.object({
+  repoPath: z.string(),
+  base: z.string(),
+  head: z.string(),
+  person: z.string(),
+  intent: z.string().optional(),
+});
+export type ReviewRequest = z.infer<typeof ReviewRequest>;
+
+export const Usage = z.object({
+  inputTokens: z.number().int().nonnegative(),
+  outputTokens: z.number().int().nonnegative(),
+  llmCalls: z.number().int().nonnegative(),
+});
+export type Usage = z.infer<typeof Usage>;
+
+export const Review = z.object({
+  id: z.string(),
+  request: ReviewRequest,
+  stage: ReviewStage,
+  claims: z.array(RankedClaim),
+  plan: ExamPlan.nullable(),
+  grades: z.array(Grade),
+  gate: Gate.nullable(),
+  usage: Usage,
+  startedAt: z.string(),
+  finishedAt: z.string().nullable(),
+});
+export type Review = z.infer<typeof Review>;
+
+/**
+ * One line of the ledger. Mirrors Mabel's data boundary: scores and hashes
+ * leave the review, while diffs, transcripts and model output do not.
+ */
+export const Attestation = z.object({
+  person: z.string(),
+  symbol: z.string(),
+  file: z.string(),
+  codeHash: z.string(),
+  score: z.number().min(0).max(1),
+  at: z.string(),
+  reviewId: z.string(),
+});
+export type Attestation = z.infer<typeof Attestation>;
+
+export const FogNode = z.object({
+  id: z.string(),
+  file: z.string(),
+  symbol: z.string().nullable(),
+  size: z.number().nonnegative(),
+  blastRadius: z.number().nonnegative(),
+  /** 0 is fully understood, 1 is understood by nobody. */
+  fog: z.number().min(0).max(1),
+  knownBy: z.array(z.object({ person: z.string(), mastery: z.number().min(0).max(1) })),
+});
+export type FogNode = z.infer<typeof FogNode>;
+
+export const FogMap = z.object({
+  generatedAt: z.string(),
+  debt: z.number().nonnegative(),
+  nodes: z.array(FogNode),
+});
+export type FogMap = z.infer<typeof FogMap>;
