@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import { Answer, ReviewRequest, type Review } from "@viva/contracts";
+import { Answer, ReviewFeedback, ReviewRequest, type Review } from "@viva/contracts";
 import {
   appendAttestations,
   computeFog,
@@ -17,6 +17,7 @@ import {
 } from "@viva/engine";
 import { Hono } from "hono";
 import { z } from "zod";
+import { decisionIdentity, readDecision, writeDecision } from "./decisions.js";
 
 export function createProvider(env: NodeJS.ProcessEnv = process.env): LlmProvider {
   if (env.VIVA_LLM === "gemini") {
@@ -34,20 +35,39 @@ const CHECKS_DIR = fileURLToPath(new URL("../../../checks", import.meta.url));
  */
 export function createApp(llm: LlmProvider = createProvider()) {
   const reviews = new Map<string, Review>();
+  const byKey = new Map<string, Promise<Review>>();
+  const changing = new Set<string>();
   const app = new Hono();
 
   app.get("/v1/health", (c) => c.json({ ok: true, llm: llm.id }));
 
   app.post("/v1/reviews", async (c) => {
-    const request = ReviewRequest.parse(await c.req.json());
-    const review = await startReview(request, {
-      llm,
-      checks: await loadChecks(CHECKS_DIR),
-      session: entireSource,
-      blast: grepBlastRadius,
-      ledger: await readLedger(request.repoPath),
-    });
-    reviews.set(review.id, review);
+    const { request, key, dir } = await decisionIdentity(ReviewRequest.parse(await c.req.json()));
+    let pending = byKey.get(key);
+    if (!pending) {
+      pending = (async () => {
+        const receipt = await readDecision(dir, key);
+        const review: Review = receipt ? {
+          id: receipt.reviewId, request, stage: "done", claims: [], plan: null, grades: [],
+          gate: receipt.gate, usage: { inputTokens: 0, outputTokens: 0, llmCalls: 0 },
+          startedAt: receipt.finishedAt, finishedAt: receipt.finishedAt,
+        } : await startReview(request, {
+          llm,
+          checks: await loadChecks(CHECKS_DIR),
+          session: entireSource,
+          blast: grepBlastRadius,
+          ledger: await readLedger(request.repoPath),
+        });
+        if (!receipt) await writeDecision(review);
+        reviews.set(review.id, review);
+        return review;
+      })();
+      byKey.set(key, pending);
+      // Allow a retry after an infrastructure failure.
+      pending.catch(() => byKey.delete(key));
+    }
+    const initial = await pending;
+    const review = reviews.get(initial.id) ?? initial;
     return c.json(review);
   });
 
@@ -55,25 +75,61 @@ export function createApp(llm: LlmProvider = createProvider()) {
 
   app.get("/v1/reviews/:id", (c) => {
     const review = reviews.get(c.req.param("id"));
-    return review ? c.json(review) : c.json({ error: "not found" }, 404);
+    return review ? c.json(review) : c.json({ error: "review not found; retry git push to refresh it after a daemon restart" }, 404);
   });
 
   app.post("/v1/reviews/:id/answers", async (c) => {
+    const answers = z.array(Answer).parse(await c.req.json());
     const current = reviews.get(c.req.param("id"));
     if (!current) return c.json({ error: "not found" }, 404);
-    const answers = z.array(Answer).parse(await c.req.json());
-    const { review, attestations } = await submitAnswers(current, answers, { llm });
-    reviews.set(review.id, review);
-    await appendAttestations(review.request.repoPath, review.request.head, attestations);
-    return c.json(review);
+    if (current.stage !== "awaiting-exam" || changing.has(current.id)) {
+      return c.json({ error: "review is not awaiting an exam" }, 409);
+    }
+    changing.add(current.id);
+    try {
+      const { review, attestations } = await submitAnswers(current, answers, { llm });
+      await appendAttestations(review.request.repoPath, review.request.head, attestations);
+      await writeDecision(review);
+      reviews.set(review.id, review);
+      return c.json(review);
+    } finally {
+      changing.delete(current.id);
+    }
   });
 
-  app.post("/v1/reviews/:id/skip", (c) => {
+  app.post("/v1/reviews/:id/skip", async (c) => {
     const current = reviews.get(c.req.param("id"));
     if (!current) return c.json({ error: "not found" }, 404);
+    if (current.gate?.skippable === false || changing.has(current.id)) {
+      return c.json({ error: "this gate cannot be skipped" }, 409);
+    }
     const review = skipWithDebt(current);
-    reviews.set(review.id, review);
-    return c.json(review);
+    changing.add(current.id);
+    try {
+      await writeDecision(review);
+      reviews.set(review.id, review);
+      return c.json(review);
+    } finally {
+      changing.delete(current.id);
+    }
+  });
+
+  app.get("/v1/reviews/:id/feedback", (c) => {
+    const review = reviews.get(c.req.param("id"));
+    if (!review) return c.json({ error: "review not found; retry git push after a daemon restart" }, 404);
+    if (!review.gate) return c.json({ error: "complete the exam first" }, 409);
+    if (review.gate.reason.startsWith("exam-") && review.grades.length === 0) {
+      return c.json({ error: "feedback expired on daemon restart; only the gate decision was retained" }, 410);
+    }
+    return c.json(ReviewFeedback.parse({
+      reviewId: review.id, gate: review.gate,
+      items: review.grades.flatMap((grade) => {
+        const question = review.plan?.questions.find((q) => q.id === grade.questionId);
+        return question && grade.missing.length ? [{
+          questionId: question.id, location: question.location, ask: question.ask, missing: grade.missing,
+        }] : [];
+      }),
+    }));
   });
 
   app.get("/v1/fog", async (c) => {
@@ -82,8 +138,9 @@ export function createApp(llm: LlmProvider = createProvider()) {
   });
 
   app.onError((error, c) => {
-    console.error(error);
-    return c.json({ error: error.message }, 500);
+    // Errors from a provider may contain model/repository text. Never log it.
+    console.error("vivad: request failed");
+    return c.json({ error: "Viva request failed" }, 500);
   });
 
   return app;

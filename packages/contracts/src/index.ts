@@ -147,6 +147,28 @@ export const Review = z.object({
 });
 export type Review = z.infer<typeof Review>;
 
+/** Local retry receipt: no questions, model prose, diffs or answers on disk. */
+export const ReviewDecision = z.object({
+  key: z.string().regex(/^[a-f0-9]{64}$/),
+  reviewId: z.string().uuid(),
+  gate: Gate,
+  finishedAt: z.string(),
+});
+export type ReviewDecision = z.infer<typeof ReviewDecision>;
+
+/** On-demand feedback stays in the review; it never enters the ledger. */
+export const ReviewFeedback = z.object({
+  reviewId: z.string(),
+  gate: Gate,
+  items: z.array(z.object({
+    questionId: z.string(),
+    location: CodeLocation,
+    ask: z.string(),
+    missing: z.array(z.string()),
+  })),
+});
+export type ReviewFeedback = z.infer<typeof ReviewFeedback>;
+
 /**
  * One line of the ledger. Mirrors Mabel's data boundary: scores and hashes
  * leave the review, while diffs, transcripts and model output do not.
