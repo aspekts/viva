@@ -4,9 +4,9 @@ import { readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { FogMap, Review, ReviewCode, ReviewFeedback, VivaEvent } from "@viva/contracts";
-import { MockProvider } from "@viva/engine";
+import { MockProvider, ResilientProvider } from "@viva/engine";
 import { fixtureRepo } from "../../../packages/engine/src/testing.js";
-import { createApp } from "./app.js";
+import { createApp, createProvider } from "./app.js";
 
 const repos: string[] = [];
 // Retries without blocking, as Windows locks a repo while a fog check's git process runs in it.
@@ -38,6 +38,31 @@ describe("vivad", () => {
   it("reports health", async () => {
     const response = await createApp(new MockProvider()).request("/v1/health");
     expect(await response.json()).toEqual({ ok: true, llm: "mock" });
+  });
+
+  it("offers replay-only without a key and labels a replay miss as infrastructure failure", async () => {
+    const llm = createProvider({ VIVA_LLM: "gemini", GEMINI_MODEL: "test", VIVA_LLM_REPLAY: "1" });
+    const app = createApp(llm);
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const request = fixture();
+      const response = await post(app, "/v1/reviews", request);
+      expect(response.status).toBe(503);
+      expect(await response.json()).toMatchObject({ code: "model-unavailable", error: expect.stringContaining("replay-miss") });
+      expect(await (await app.request("/v1/health")).json()).toMatchObject({ llm: "gemini+replay-only+unavailable" });
+      expect(log).not.toHaveBeenCalled();
+      // Infrastructure errors do not leave a completed decision behind.
+      expect((await post(app, "/v1/reviews", request)).status).toBe(503);
+    } finally { log.mockRestore(); }
+  });
+
+  it("reports actual fallback use through health without logging model errors", async () => {
+    const llm = new ResilientProvider({ id: "live", complete: async () => { throw new Error("429 secret body"); } }, {
+      cacheIdentity: "test", fallback: new MockProvider(), // Test stub only; production never wires this fallback.
+    });
+    const app = createApp(llm);
+    await start(app, fixture());
+    expect(await (await app.request("/v1/health")).json()).toEqual({ ok: true, llm: "live+fallback" });
   });
 
   it("returns 404 for unknown reviews", async () => {

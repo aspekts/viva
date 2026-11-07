@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Answer, FogMap, ReviewCode, ReviewFeedback, ReviewRequest, VivaEvent, type Review } from "@viva/contracts";
 import {
@@ -12,6 +13,8 @@ import {
   loadChecks,
   loadFogFiles,
   MockProvider,
+  ModelUnavailableError,
+  ResilientProvider,
   readLedger,
   readReviewFile,
   skipWithDebt,
@@ -26,8 +29,20 @@ import { decisionIdentity, readDecision, writeDecision } from "./decisions.js";
 
 export function createProvider(env: NodeJS.ProcessEnv = process.env): LlmProvider {
   if (env.VIVA_LLM === "gemini") {
-    if (!env.GEMINI_API_KEY || !env.GEMINI_MODEL) throw new Error("set GEMINI_API_KEY and GEMINI_MODEL");
-    return new GeminiProvider(env.GEMINI_API_KEY, env.GEMINI_MODEL, env.GEMINI_FALLBACK_MODEL);
+    const replayOnly = env.VIVA_LLM_REPLAY === "1";
+    const record = env.VIVA_LLM_RECORD === "1";
+    if (!env.GEMINI_MODEL || (!replayOnly && !env.GEMINI_API_KEY)) {
+      throw new Error("set GEMINI_MODEL and (unless replay-only) GEMINI_API_KEY");
+    }
+    // Each model retains GeminiProvider's two attempts, backoff and timeout.
+    // Fallback belongs outside the primary so replay gets first refusal.
+    return new ResilientProvider(new GeminiProvider(env.GEMINI_API_KEY ?? "", env.GEMINI_MODEL), {
+      cacheIdentity: env.GEMINI_MODEL,
+      cacheDir: record || replayOnly ? resolve(env.VIVA_LLM_CACHE_DIR ?? ".viva/cache") : undefined,
+      record, replayOnly,
+      fallback: !replayOnly && env.GEMINI_FALLBACK_MODEL
+        ? new GeminiProvider(env.GEMINI_API_KEY!, env.GEMINI_FALLBACK_MODEL) : undefined,
+    });
   }
   return new MockProvider();
 }
@@ -234,6 +249,9 @@ export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 200
   });
 
   app.onError((error, c) => {
+    if (error instanceof ModelUnavailableError) {
+      return c.json({ error: error.message, code: "model-unavailable" }, 503);
+    }
     // Errors from a provider may contain model/repository text. Never log it.
     console.error("vivad: request failed");
     return c.json({ error: "Viva request failed" }, 500);
