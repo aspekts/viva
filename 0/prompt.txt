@@ -1,0 +1,24 @@
+Act as the implementation sub-agent for this task.
+
+Fix one blocking review finding on PR #46 (branch memory-direction-check, now targeting main) in aspekts/viva, a hackathon project (HackTheBurgh, submission Sunday 12:00). #46 reads decision memory at the push's base, and checks/direction.md raises "is this the right direction?" claims when a change contradicts a recorded decision. Direction claims are always selected for the exam. Read `gh pr view 46`, AGENTS.md and docs/ARCHITECTURE.md first.
+
+Setup: `git fetch origin`. The branch is checked out in other worktrees, so work on a detached HEAD from origin/memory-direction-check, and push with `git push origin HEAD:memory-direction-check`. Never force-push. Merge origin/main first: #45 is merged now, and main may have moved.
+
+The finding (P1, from GPT-6.1 Sol's re-review, reproduced): selected direction claims can still escape the exam. `packages/engine/src/pipeline/review.ts` (around line 128) accepts the planner's result without checking direction coverage. `pipeline/plan.ts` (around lines 55–62) accepts any non-empty subset of the selected claims. Reproduction: the selected claims were [direction-1, behaviour-change-1], and a valid planner response asked only about behaviour-change-1. Answering it gave `approve / exam-passed` without the reversal ever being examined.
+
+Fix:
+- Guarantee every selected direction claim gets a question. If the planner omits one, add a deterministic fallback question built from the claim. For example: ask "This change appears to reverse a recorded decision: <claim summary>. Is that the right direction, and why?", with a short rubric such as "why the recorded decision no longer applies" and "what the change does instead", the claim's location, and a followUpIfVague. Keep the total at or under maxQuestions; direction questions take priority if trimming is needed.
+- Fallback text must only use claim fields. Never put memory or session text into it unwrapped.
+- Keep #47's invariant (no usable questions means throw) and #7's one-question-per-real-claim planner behaviour.
+- Add a regression test using a schema-valid planner stub that omits the direction claim: the exam must include a direction question, and answering only the other question must not pass. Also add an eval case if it fits the existing direction evals.
+
+Not in scope: the session token budget not counting memory text. Sol judged that non-blocking for the hackathon, as the hook fails open without recording a pass. Mention it in the PR body as a follow-up.
+
+Rules:
+- Run `pnpm install` and `env -u VIVA_LLM -u GEMINI_API_KEY pnpm check`. It must pass with no key and no network. Never make live model calls, and never copy any .env.
+- Hard gates, data boundary, untrusted() and fail-open rules apply.
+- Don't merge, and don't watch PRs. Don't kill processes you didn't start.
+- Add the fix to the PR body's "After independent review" section.
+- End commits with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`
+
+Final message: PR <full URL>, head <SHA>, checks and reviews <state>.
