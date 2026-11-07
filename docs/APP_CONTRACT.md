@@ -11,6 +11,7 @@ The agreement between the frontend (`apps/web`) and the daemon (`apps/vivad`). I
 3. **Parse every response** with its zod schema, as `apps/web/src/api/client.ts` does. A mismatch should fail loudly.
 4. **All API calls go through `client.ts`,** so mock mode keeps working.
 5. **Changing a shape:** update `packages/contracts`, `fixtures/mock` and this doc in the same PR, and tag the other side.
+6. **Need something from the backend?** Add it to [the overnight queue](OVERNIGHT.md), so agents can pick it up while you carry on against mock data.
 
 ## Running it
 
@@ -188,7 +189,7 @@ To test a state, add a fixture, for example `review-failed.json`, and keep it va
 
 ## Gaps to agree
 
-Marcus to confirm. Until these land, build the UI against the proposed shape behind mock data.
+Marcus to confirm. Until these land, build the UI against the proposed shape behind mock data. Add anything new to [the overnight queue](OVERNIGHT.md).
 
 | Gap | Blocks | Proposal |
 |---|---|---|
