@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { worstVerdict, type Attestation, type Grade } from "@viva/contracts";
 import { defaults } from "../config.js";
 import { computeFog } from "../fog.js";
 import { decayedMastery } from "../ledger/mastery.js";
 import { appendAttestations, readLedger } from "../ledger/notes.js";
+import { GeminiProvider, toGeminiSchema } from "../llm/gemini.js";
 import { MockProvider } from "../llm/mock.js";
 import { BudgetExceededError, MeteredProvider, untrusted } from "../llm/provider.js";
 import { fixtureRepo } from "../testing.js";
@@ -117,6 +118,51 @@ describe("mastery and fog", () => {
     const map = computeFog(files, [fresh, { ...fresh, person: "Pedro", score: 0.3 }], now);
     expect(map.nodes[0]?.fog).toBeCloseTo(0.2);
     expect(map.nodes[1]?.fog).toBe(1);
+  });
+});
+
+describe("gemini schema", () => {
+  it("flattens tuples and keeps sizes", () => {
+    const schema = toGeminiSchema({
+      $schema: "x",
+      type: "array",
+      minItems: 2,
+      maxItems: 2,
+      items: [{ type: "integer" }, { type: "integer" }],
+    });
+    expect(schema).toEqual({ type: "array", minItems: 2, maxItems: 2, items: { type: "integer" } });
+  });
+});
+
+describe("gemini resilience", () => {
+  it("falls back to the second model on capacity errors", async () => {
+    const urls: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      urls.push(url);
+      if (url.includes("primary")) return new Response("busy", { status: 503 });
+      const text = JSON.stringify({ ok: true });
+      return Response.json({ candidates: [{ content: { parts: [{ text }] } }] });
+    });
+    const llm = new GeminiProvider("key", "primary", "backup", 0);
+    const { value } = await llm.complete({ name: "x", system: "", user: "", schema: z.object({ ok: z.boolean() }) });
+    vi.unstubAllGlobals();
+    expect(value.ok).toBe(true);
+    expect(urls).toHaveLength(3);
+  });
+});
+
+describe("gemini timeouts", () => {
+  it("falls back when a request hangs or fails", async () => {
+    let calls = 0;
+    vi.stubGlobal("fetch", async () => {
+      calls += 1;
+      if (calls <= 2) throw new Error("timed out");
+      return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify({ ok: true }) }] } }] });
+    });
+    const llm = new GeminiProvider("key", "primary", "backup", 0);
+    const { value } = await llm.complete({ name: "x", system: "", user: "", schema: z.object({ ok: z.boolean() }) });
+    vi.unstubAllGlobals();
+    expect(value.ok).toBe(true);
   });
 });
 

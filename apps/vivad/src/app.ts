@@ -21,7 +21,7 @@ import { z } from "zod";
 export function createProvider(env: NodeJS.ProcessEnv = process.env): LlmProvider {
   if (env.VIVA_LLM === "gemini") {
     if (!env.GEMINI_API_KEY || !env.GEMINI_MODEL) throw new Error("set GEMINI_API_KEY and GEMINI_MODEL");
-    return new GeminiProvider(env.GEMINI_API_KEY, env.GEMINI_MODEL);
+    return new GeminiProvider(env.GEMINI_API_KEY, env.GEMINI_MODEL, env.GEMINI_FALLBACK_MODEL);
   }
   return new MockProvider();
 }
