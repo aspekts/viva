@@ -1,4 +1,4 @@
-import { FogMap, Review, ReviewCode, type Answer, type CodeLocation } from "@viva/contracts";
+import { FogMap, Review, ReviewCode, VivaEvent, type Answer, type CodeLocation } from "@viva/contracts";
 import mockCode from "../../../../fixtures/mock/code.json";
 import mockFog from "../../../../fixtures/mock/fog.json";
 import mockReview from "../../../../fixtures/mock/review.json";
@@ -10,6 +10,36 @@ async function json(path: string, init?: RequestInit): Promise<unknown> {
   const response = await fetch(path, init);
   if (!response.ok) throw new Error(`${path} returned ${response.status}`);
   return response.json();
+}
+
+const POLL_MS = 2000;
+
+/**
+ * Calls refresh whenever the fog or a review changes, and returns a function to
+ * stop. It listens to live events, and polls for as long as they're unavailable.
+ */
+export function watch(topic: VivaEvent["type"], refresh: () => void): () => void {
+  if (MOCK) return () => {};
+  let poll: ReturnType<typeof setInterval> | undefined;
+  const startPolling = () => { poll ??= setInterval(refresh, POLL_MS); };
+  const stopPolling = () => { clearInterval(poll); poll = undefined; };
+
+  startPolling();
+  if (typeof EventSource === "undefined") return stopPolling;
+  const events = new EventSource("/v1/events");
+  events.onopen = () => {
+    stopPolling();
+    // Nothing is replayed, so catch up on whatever changed while disconnected.
+    refresh();
+  };
+  events.onerror = startPolling;
+  events.onmessage = ({ data }) => {
+    if (VivaEvent.parse(JSON.parse(data)).type === topic) refresh();
+  };
+  return () => {
+    events.close();
+    stopPolling();
+  };
 }
 
 export async function getFog(): Promise<FogMap> {

@@ -1,10 +1,11 @@
 import { fileURLToPath } from "node:url";
-import { Answer, ReviewCode, ReviewFeedback, ReviewRequest, type Review } from "@viva/contracts";
+import { Answer, ReviewCode, ReviewFeedback, ReviewRequest, VivaEvent, type Review } from "@viva/contracts";
 import {
   appendAttestations,
   codeWindow,
   computeFog,
   entireSource,
+  fogVersion,
   GeminiProvider,
   grepBlastRadius,
   loadChecks,
@@ -18,6 +19,7 @@ import {
   type LlmProvider,
 } from "@viva/engine";
 import { Hono } from "hono";
+import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import { decisionIdentity, readDecision, writeDecision } from "./decisions.js";
 
@@ -43,11 +45,31 @@ const CodeQuery = z.object({
  * The daemon only tracks reviews and serves the UI. Reviews stay on this
  * machine, and only attestations leave it, inside git notes.
  */
-export function createApp(llm: LlmProvider = createProvider()) {
+export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 2000 } = {}) {
   const reviews = new Map<string, Review>();
   const byKey = new Map<string, Promise<Review>>();
   const changing = new Set<string>();
   const app = new Hono();
+
+  const listeners = new Set<(event: VivaEvent) => void>();
+  const publish = (event: VivaEvent) => { for (const listener of listeners) listener(event); };
+  /** The last fog version seen for each repo that has been reviewed. */
+  const fogVersions = new Map<string, string>();
+  let fogPoll: NodeJS.Timeout | undefined;
+  let checkingFog = false;
+
+  async function checkFog(repoPath: string) {
+    const version = await fogVersion(repoPath).catch(() => null);
+    if (version === null || fogVersions.get(repoPath) === version) return;
+    fogVersions.set(repoPath, version);
+    publish({ type: "fog", repoPath });
+  }
+
+  async function record(review: Review) {
+    reviews.set(review.id, review);
+    publish({ type: "review", reviewId: review.id, stage: review.stage, gate: review.gate });
+    await checkFog(review.request.repoPath);
+  }
 
   app.get("/v1/health", (c) => c.json({ ok: true, llm: llm.id }));
 
@@ -69,7 +91,7 @@ export function createApp(llm: LlmProvider = createProvider()) {
           ledger: await readLedger(request.repoPath),
         });
         if (!receipt) await writeDecision(review);
-        reviews.set(review.id, review);
+        await record(review);
         return review;
       })();
       byKey.set(key, pending);
@@ -100,7 +122,7 @@ export function createApp(llm: LlmProvider = createProvider()) {
       const { review, attestations } = await submitAnswers(current, answers, { llm });
       await appendAttestations(review.request.repoPath, review.request.head, attestations);
       await writeDecision(review);
-      reviews.set(review.id, review);
+      await record(review);
       return c.json(review);
     } finally {
       changing.delete(current.id);
@@ -117,7 +139,7 @@ export function createApp(llm: LlmProvider = createProvider()) {
     changing.add(current.id);
     try {
       await writeDecision(review);
-      reviews.set(review.id, review);
+      await record(review);
       return c.json(review);
     } finally {
       changing.delete(current.id);
@@ -163,6 +185,32 @@ export function createApp(llm: LlmProvider = createProvider()) {
     c.header("cache-control", "no-store");
     return c.json(ReviewCode.parse({ reviewId: review.id, file, commit: head, ...window }));
   });
+
+  /** Only runs while someone is listening. Commits change the fog without any review. */
+  app.get("/v1/events", (c) => streamSSE(c, async (stream) => {
+    // Registered before any await, as Hono won't call a handler added after the abort.
+    const closed = new Promise<void>((resolve) => stream.onAbort(resolve));
+    const listener = (event: VivaEvent) => { void stream.writeSSE({ data: JSON.stringify(VivaEvent.parse(event)) }); };
+    listeners.add(listener);
+    fogPoll ??= setInterval(async () => {
+      // Slow git, as on Windows, must not pile up processes from earlier checks.
+      if (checkingFog) return;
+      checkingFog = true;
+      await Promise.all([...fogVersions.keys()].map(checkFog));
+      checkingFog = false;
+    }, fogPollMs).unref();
+    try {
+      // Sends the headers now, so the browser knows the stream is open.
+      await stream.write(": connected\n\n");
+      if (!stream.aborted) await closed;
+    } finally {
+      listeners.delete(listener);
+      if (listeners.size === 0) {
+        clearInterval(fogPoll);
+        fogPoll = undefined;
+      }
+    }
+  }));
 
   app.get("/v1/fog", async (c) => {
     const repoPath = c.req.query("repo") ?? process.cwd();
