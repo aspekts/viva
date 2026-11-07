@@ -4,8 +4,7 @@ import { readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { Review, ReviewCode, ReviewFeedback, VivaEvent } from "@viva/contracts";
-import { MockProvider } from "@viva/engine";
-import { fixtureRepo } from "../../../packages/engine/src/testing.js";
+import { fixtureRepo, MockProvider, type LlmProvider } from "@viva/engine";
 import { createApp } from "./app.js";
 
 const repos: string[] = [];
@@ -357,5 +356,27 @@ describe("vivad", () => {
       // Lets the last check's git exit, as Windows can't delete a directory a process runs in.
       await new Promise((resolve) => setTimeout(resolve, 200));
     });
+  });
+
+  it("keeps error text out of the log and the response", async () => {
+    const canary = "CANARY-quoted-from-the-transcript";
+    const failing: LlmProvider = {
+      id: "failing",
+      complete: async () => {
+        throw new Error(`could not parse model output: ${canary}`);
+      },
+    };
+    const { repo, base, head } = fixtureRepo({ "a.ts": "export const a = 1;\n" }, { "a.ts": "export const a = 2;\n" });
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const response = await createApp(failing).request("/v1/reviews", {
+      method: "POST",
+      body: JSON.stringify({ repoPath: repo, base, head, person: "p" }),
+    });
+
+    expect(response.status).toBe(500);
+    expect(await response.text()).not.toContain(canary);
+    expect(JSON.stringify(log.mock.calls)).not.toContain(canary);
+    log.mockRestore();
   });
 });
