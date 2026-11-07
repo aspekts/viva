@@ -9,8 +9,9 @@
     "dev:api": "pnpm --filter @viva/vivad dev",
     "dev:web": "pnpm --filter @viva/web dev",
     "test": "vitest run",
-    "typecheck": "pnpm -r typecheck",
+    "typecheck": "pnpm -r typecheck && tsc -p evals/tsconfig.json",
     "evals": "tsx evals/run.ts",
+    "evals:live": "tsx evals/run.ts --live",
     "viva": "tsx apps/vivad/src/cli.ts",
     "check": "pnpm typecheck && pnpm test && pnpm evals"
   },
