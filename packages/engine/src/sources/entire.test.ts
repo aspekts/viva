@@ -378,6 +378,15 @@ describe("a review with a session", () => {
     expect(three * 3).toBeLessThan(60_000);
   });
 
+  it("measures the diff with the line numbers the checks receive", () => {
+    const lines = 13_000;
+    const hunk = `@@ -0,0 +1,${lines} @@\n${"+a\n".repeat(lines)}`;
+    const numbered = { diff: hunk, files: [], totalLines: lines };
+    const plain = { diff: "x".repeat(hunk.length), files: [], totalLines: lines };
+    const checks = [check("a"), check("b"), check("c")];
+    expect(sessionTokenBudget(checks, numbered, 60_000)).toBeLessThan(sessionTokenBudget(checks, plain, 60_000));
+  });
+
   it("leaves session text out of the review and the ledger, whatever the model repeats", async () => {
     const { repo, request } = repoAndRequest();
     storeCheckpoint(repo, ID_A, session(lines(fullAssistant(text(`Reasoning ${canary}`))), { "0/prompt.txt": `Ask ${canary}` }));
