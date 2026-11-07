@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { Review, ReviewCode, ReviewFeedback, VivaEvent } from "@viva/contracts";
 import { fixtureRepo, MockProvider, type LlmProvider } from "@viva/engine";
 import { createApp } from "./app.js";
+import { decisionIdentity } from "./decisions.js";
 
 const repos: string[] = [];
 // Retries without blocking, as Windows locks a repo while a fog check's git process runs in it.
@@ -66,7 +67,7 @@ describe("vivad", () => {
 
     const dir = join(request.repoPath, ".git", "viva-decisions");
     const receipt = JSON.parse(readFileSync(join(dir, readdirSync(dir)[0]!), "utf8"));
-    expect(Object.keys(receipt).sort()).toEqual(["finishedAt", "gate", "key", "reviewId"]);
+    expect(Object.keys(receipt).sort()).toEqual(["finishedAt", "gate", "key", "policy", "reviewId"]);
     expect(JSON.stringify(receipt)).not.toMatch(/charges|behaviour|src\/pay|transcript|mustMention/);
   });
 
@@ -406,5 +407,21 @@ describe("vivad", () => {
     const response = await post(createApp(emptyPlan), "/v1/reviews", request);
     expect(response.status).toBe(500);
     expect(existsSync(join(request.repoPath, ".git", "viva-decisions"))).toBe(false);
+  });
+
+  it.each([
+    ["re-examines a pass recorded before policy 2, as it may have asked nothing", "exam-passed", "approve", "awaiting-exam"],
+    ["keeps a failure recorded before policy 2", "exam-failed", "reject", "done"],
+  ])("%s", async (_, reason, verdict, stage) => {
+    const request = fixture();
+    const { key, dir } = await decisionIdentity(request);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, `${key}.json`), JSON.stringify({
+      key, reviewId: "5f0c6a8e-6f3b-4c55-9d43-2b4d7a1f9e10", finishedAt: new Date().toISOString(),
+      gate: { verdict, reason, skippable: true },
+    }));
+    const review = await start(createApp(new MockProvider()), request);
+    expect(review.stage).toBe(stage);
+    if (stage === "done") expect(review.gate?.reason).toBe(reason);
   });
 });
