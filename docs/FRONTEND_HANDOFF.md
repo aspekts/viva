@@ -2,7 +2,7 @@
 
 Your starting point, kept up to date as work lands. For exact API details, see [the app contract](APP_CONTRACT.md).
 
-**Last updated:** Saturday 7 November, 21:45
+**Last updated:** Saturday 7 November, 21:25
 
 ## Start here
 
@@ -115,5 +115,5 @@ Newest first. Add a line when something changes what the frontend can rely on.
 
 | When | What changed |
 |---|---|
-| Sat 21:45 | [PR #8](https://github.com/aspekts/viva/pull/8) open, not merged: `getReviewCode()` and `GET /v1/reviews/:id/code` return the lines for a question. The exam shows them unstyled, in `exam/QuestionCode.tsx`. Sophina, restyle or replace it. Not yet seen in a browser |
+| Sat 21:25 | [PR #8](https://github.com/aspekts/viva/pull/8) open, not merged: `getReviewCode()` and `GET /v1/reviews/:id/code` return the lines for a question. The exam shows them unstyled, in `exam/QuestionCode.tsx`. Sophina, restyle or replace it. Not yet seen in a browser |
 | Sat 21:20 | Handoff, contract and overnight queue created |
