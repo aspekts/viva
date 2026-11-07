@@ -24,6 +24,7 @@ git push
   -> collect the diff and session context
   -> deterministic prechecks       docs only, too large, protected paths
   -> injection scan                match: defer, cannot be skipped
+  -> memory lookup                 git reads of .viva/memory/ for the changed files, no model
   -> checks, in parallel           one question each, schema-enforced
   -> risk ranking                  plain arithmetic, no model
   -> plan up to 3 questions
@@ -62,6 +63,12 @@ Memory is plain markdown, committed with the code: `.viva/memory/<path>.md` for 
 - Agents read files. An agent changing `src/pay.ts` finds `.viva/memory/src/pay.ts.md` by path or by grep, with no Viva tooling. `pnpm viva memory <file>` prints it as untrusted data.
 - It travels with the repo in normal pushes, unlike notes refs, which must be pushed explicitly. It also goes through code review like any change, and Entire captures it with the commit.
 - The developer sees what's stored: the save prints it, `git diff` shows it, and nothing leaves the machine until they commit.
+
+### Questioning the direction
+
+Saved memory is used to question later changes that cut across it. Memory is an unsigned assertion in the repository, not a verified statement by a developer: anyone who can commit can write a section in anyone's name. So, before any model call, the review reads the memory for the changed files from git at the push's base commit only. Memory that the push itself adds or edits never takes part in reviewing that push. A change can't rewrite the decision it reverses, push older decisions out with a flood of new entries, or plant memory to steer its own review. New memory only counts once it is in a later push's base. Entries that look like instructions to the reviewer, or are filed under another path, are dropped, and at most 8 are kept.
+
+`checks/direction.md` declares `needs: memory`. With no relevant memory it is skipped without a model call, so pushes elsewhere cost no extra tokens. Otherwise it alone receives the memory, inside `untrusted()`, and returns ordinary `CheckResult` claims, such as "You told us X was deliberate; this change reverses it". These are ranked like any claim, but always reach the exam, whatever their risk score. Neither knowing the code nor having asked for the change settles whether reversing a recorded decision is the right direction, so these claims ignore the developer's mastery and the risk threshold. An intent that explicitly asks for the reversal makes the claim `requested`, which lowers its score but not its place. Reversals come first in the exam, and remaining questions go to the riskiest other claims, up to the usual 3. Reading memory can't block a push: any failure means no memory.
 
 It is separate from the ledger, which still holds only scores and hashes. `.viva/memory/` is not a protected path, so saving memory doesn't trip `viva-config-changed`, and a push that also touches `.viva/config.json` or `.viva/checks/` is still a hard gate. Missing or damaged memory reads as empty, and a failed save never changes a verdict.
 

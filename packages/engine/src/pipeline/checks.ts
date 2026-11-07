@@ -1,7 +1,8 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { CheckResult, type Claim } from "@viva/contracts";
+import { CheckResult, type Claim, type MemoryEntry } from "@viva/contracts";
 import { estimateTokens, untrusted, type LlmProvider } from "../llm/provider.js";
+import { memoryBrief } from "../memory/retrieve.js";
 import { numberDiff, type Change } from "../sources/git.js";
 import type { SessionContext } from "../sources/session.js";
 
@@ -10,6 +11,8 @@ export interface CheckDefinition {
   name: string;
   description: string;
   prompt: string;
+  /** "memory" means the check runs only when decisions are recorded for the changed files. */
+  needs?: "memory";
 }
 
 export function parseCheck(source: string): CheckDefinition {
@@ -22,7 +25,11 @@ export function parseCheck(source: string): CheckDefinition {
     }),
   );
   if (!fields.name) throw new Error("check is missing a name");
-  return { name: fields.name, description: fields.description ?? "", prompt: (match[2] ?? "").trim() };
+  if (fields.needs !== undefined && fields.needs !== "memory") throw new Error(`check ${fields.name} needs something unknown`);
+  return {
+    name: fields.name, description: fields.description ?? "", prompt: (match[2] ?? "").trim(),
+    ...(fields.needs ? { needs: fields.needs } : {}),
+  };
 }
 
 export async function loadChecks(dir: string): Promise<CheckDefinition[]> {
@@ -61,12 +68,16 @@ export function sessionTokenBudget(checks: CheckDefinition[], change: Change, ma
   return Math.max(MIN_SESSION_TOKENS, Math.min(spare, Math.floor(perCheck / 2)));
 }
 
-/** Checks run in parallel, each with its own prompt, then merge. */
+/**
+ * Checks run in parallel, each with its own prompt, then merge. A check that
+ * needs memory makes no call when none is recorded, and only it sees memory.
+ */
 export async function runChecks(
   checks: CheckDefinition[],
   change: Change,
   session: SessionContext,
   llm: LlmProvider,
+  memory: MemoryEntry[] = [],
 ): Promise<Claim[]> {
   const asked = Boolean(session.intent?.trim() || session.transcript?.trim());
   const context = [
@@ -77,10 +88,11 @@ export async function runChecks(
 
   const results = await Promise.all(
     checks.map(async (check) => {
+      if (check.needs === "memory" && memory.length === 0) return [];
       const { value } = await llm.complete({
         name: `check:${check.name}`,
         system: check.prompt + SYSTEM_SUFFIX,
-        user: context,
+        user: check.needs === "memory" ? `${context}\n\n${untrusted("memory", memoryBrief(memory))}` : context,
         schema: CheckResult,
       });
       return value.claims.map((claim, i) => ({
