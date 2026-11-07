@@ -9,7 +9,7 @@ import { createApp } from "./app.js";
 
 const repos: string[] = [];
 // Retries, as Windows locks a repo while a fog check's git process is still running in it.
-afterEach(() => { for (const repo of repos.splice(0)) rmSync(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); });
+afterEach(() => { for (const repo of repos.splice(0)) rmSync(repo, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }); });
 
 function fixture(after = "export function pay() { charge(); return 1; }\n", path = "src/pay.ts") {
   const { repo, base, head } = fixtureRepo({ [path]: "export function pay() { return 1; }\n" }, { [path]: after });
@@ -321,7 +321,7 @@ describe("vivad", () => {
 
     it("notices a commit with no review, and stops checking once nobody listens", async () => {
       const clear = vi.spyOn(globalThis, "clearInterval");
-      const app = createApp(new MockProvider(), { fogPollMs: 10 });
+      const app = createApp(new MockProvider(), { fogPollMs: 20 });
       const request = fixture();
       const review = await start(app, request);
       const events = await listen(app);
@@ -336,7 +336,7 @@ describe("vivad", () => {
     });
 
     it("stays quiet when a repo hasn't changed", async () => {
-      const app = createApp(new MockProvider(), { fogPollMs: 5 });
+      const app = createApp(new MockProvider(), { fogPollMs: 20 });
       const request = fixture();
       await start(app, request);
       const events = await listen(app);

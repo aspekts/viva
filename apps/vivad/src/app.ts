@@ -56,6 +56,7 @@ export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 200
   /** The last fog version seen for each repo that has been reviewed. */
   const fogVersions = new Map<string, string>();
   let fogPoll: NodeJS.Timeout | undefined;
+  let checkingFog = false;
 
   async function checkFog(repoPath: string) {
     const version = await fogVersion(repoPath).catch(() => null);
@@ -189,7 +190,13 @@ export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 200
   app.get("/v1/events", (c) => streamSSE(c, async (stream) => {
     const listener = (event: VivaEvent) => { void stream.writeSSE({ data: JSON.stringify(VivaEvent.parse(event)) }); };
     listeners.add(listener);
-    fogPoll ??= setInterval(() => { for (const repoPath of fogVersions.keys()) void checkFog(repoPath); }, fogPollMs).unref();
+    fogPoll ??= setInterval(async () => {
+      // Slow git, as on Windows, must not pile up processes from earlier checks.
+      if (checkingFog) return;
+      checkingFog = true;
+      await Promise.all([...fogVersions.keys()].map(checkFog));
+      checkingFog = false;
+    }, fogPollMs).unref();
     // Sends the headers now, so the browser knows the stream is open.
     await stream.write(": connected\n\n");
     await new Promise<void>((resolve) => stream.onAbort(resolve));
