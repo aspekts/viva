@@ -1,0 +1,39 @@
+Act as the implementation sub-agent for this task.
+
+Bring two stacked PRs up to date with main in aspekts/viva, a hackathon project (HackTheBurgh, submission Sunday 12:00), so they can merge.
+
+- #45: branch issue-18-decision-memory. Opt-in saving of passed viva explanations to committed markdown in `.viva/memory/`. It currently targets `queue/5-skip`, which has already been merged into main through #53.
+- #46: branch memory-direction-check, stacked on #45. Retrieves memory at the push's base, and a new checks/direction.md asks "is this the right direction?" when a change contradicts it. Direction claims are always examined.
+
+Both just had review fixes pushed: symlink checks before any mkdir, base-only memory, and direction claims always selected. Those must survive.
+
+Since they branched, main has gained:
+- #7's check tuning (#52): planner changes, checks.ts numberDiff, evals/exam.ts and new eval cases
+- the stack (#53)
+- #48: bounded Entire transcript streaming
+- #51: push-gate hardening (client timeouts, CLI realpath, terminal escape stripping, receipt-then-ledger ordering in app.ts)
+PR #47 (branch fix/empty-exam-pass) may or may not be merged by the time you start. It makes planExam throw when no usable question remains, submitAnswers refuse an empty plan, and aggregateGrades throw on no grades. It also adds `policy: 2` to decision receipts so older exam-passed receipts are re-examined.
+
+Task:
+1. `git fetch origin`. Other worktrees have these branches checked out, so work on detached HEADs or differently named local branches, and push with `git push origin HEAD:<branch>`. Never force-push, as reviewers and other branches depend on these heads.
+2. #45: start from origin/issue-18-decision-memory and merge origin/main. If #47 isn't merged yet, also merge origin/fix/empty-exam-pass. Resolve conflicts, starting with apps/vivad/src/app.test.ts. Run checks, then push to issue-18-decision-memory.
+3. Retarget #45 to main: `gh pr edit 45 --base main`.
+4. #46: start from origin/memory-direction-check, merge the updated issue-18-decision-memory, and resolve. Expect conflicts in apps/vivad/src/app.test.ts, evals/run.ts, packages/engine/src/llm/mock.ts, packages/engine/src/pipeline/checks.ts and packages/engine/src/pipeline/review.ts.
+   Keep all of these:
+   - main's bounded session context and token budgeting, including the numberDiff-based budget if present
+   - #7's planner (one question per real claim, location from the claim) and #47's throw when no usable question remains
+   - #51's app.ts ordering
+   - base-only memory retrieval
+   - direction claims always selected, up to maxQuestions
+   - all eval cases from both sides
+   Push to memory-direction-check. #46 keeps #45's branch as its base.
+5. After each push, run `pnpm install` and `env -u VIVA_LLM -u GEMINI_API_KEY pnpm check`. It must pass with no key and no network. Never make live model calls, and never copy any .env.
+
+Rules:
+- Make no behaviour changes beyond what conflict resolution needs. If a semantic clash forces one, keep it minimal, add a test, and explain it.
+- Hard gates, fail-open, the data boundary and untrusted() rules apply (AGENTS.md).
+- Don't merge PRs, and don't watch PRs. Don't kill processes you didn't start.
+- Add a short "Integrated with main" note to each PR body, saying how each conflict was resolved.
+- End commits with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`
+
+Final message: conflicts resolved, anything uncertain, then for each PR: PR <full URL>, head <SHA>, checks and reviews <state>.
