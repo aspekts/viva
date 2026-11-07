@@ -28,13 +28,33 @@ With `pnpm dev` running, from this folder:
 VIVA_REPO=/path/to/some/repo pnpm viva hook install
 ```
 
-Commit a change in that repo and `git push`. Risky changes pause the push until the exam is finished at the link it prints.
+Commit a change in that repo and `git push`:
+
+- **Terminal:** risky changes open an Ink exam in place. Type an answer to each question, press Enter to submit, and read the verdict. Esc offers an explicit **skip with debt**; hard gates cannot be skipped. Ctrl-C leaves the exam unfinished and blocks the push.
+- **IDE / coding agent / CI:** the hook prints an exam link and exits non-zero immediately after review creation, without polling for a person. On a local desktop it also opens the browser; known agent and CI environments never launch one. Set `VIVA_NONINTERACTIVE=1` for tools without a recognized agent marker. Complete the browser exam or run `pnpm viva exam <reviewId>` in a terminal, then retry `git push`.
+- **Retry:** the same repository, commit range and developer reuse the completed decision, including after a daemon restart. A failed exam still blocks. Skipping is an explicit debt decision, not a pass or a mastery attestation.
+- **Daemon down / infrastructure crash:** the hook warns and allows the push, as before.
+
+Run the commands below from this Viva checkout. Set `VIVA_REPO` to the target repo when handing feedback to an agent so it runs there.
+
+```bash
+pnpm viva exam <reviewId>
+pnpm viva feedback <reviewId>
+pnpm viva feedback <reviewId> --agent claude
+pnpm viva feedback <reviewId> --agent codex
+```
+
+Feedback prints the question, code location and missed concepts for pasting into a coding agent. The optional flag explicitly sends it on stdin to `claude -p` or `codex exec -`; an agent is never invoked automatically. Feedback and pending questions are memory-only: after a daemon restart, retry the push to refresh its review. Completed gate decisions survive, but detailed feedback expires.
+
+The hook reads answers from the controlling console (`/dev/tty` on macOS/Linux, `CONIN$` on Windows), leaving Git's ref-data stdin untouched. If the console cannot be opened or used in raw mode, it falls back to the browser link. Terminal flow has been exercised through a macOS PTY; Windows console behaviour still needs hands-on verification. For offline development, set `VIVA_LLM=mock` in `.env`.
 
 ## Commands
 
 | Command | What it does |
 |---|---|
 | `pnpm dev` | Runs the daemon and web UI |
+| `pnpm viva exam <reviewId>` | Opens an existing exam or verdict in the terminal |
+| `pnpm viva feedback <reviewId> [--agent claude\|codex]` | Prints missed concepts; optionally hands them to the named agent |
 | `pnpm test` | Runs unit and integration tests |
 | `pnpm evals` | Runs offline mock smoke assertions and the claim matrix |
 | `pnpm evals:live` | Opt-in sequential Gemini claim matrix; skips without a key |

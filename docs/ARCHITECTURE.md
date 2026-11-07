@@ -35,6 +35,16 @@ git push
 
 Each step stops the review if it can decide, so the cheapest step wins.
 
+## Push contexts and retries
+
+The CLI uses an Ink typed exam when output is attached to a real terminal and no known agent/CI marker is present. Its input comes from the controlling terminal, not the hook's stdin (which contains Git ref updates). It shows question locations, submits the complete answer set to the existing daemon API, and displays grades. Skip-with-debt requires confirmation and remains unavailable for `skippable: false` gates; the daemon also enforces this.
+
+Without a usable terminal, the hook prints the browser exam link and exits non-zero after review creation, with instructions to finish the exam and retry the push. It does not poll. Browser auto-open is limited to likely local desktop sessions; known agents, CI and SSH sessions only receive the link. API calls have bounded timeouts. Daemon/infrastructure failures retain the fail-open policy.
+
+The daemon deduplicates reviews by a SHA-256 identity of canonical repository path, resolved base/head commits, developer and intent. Pending exams are reused in memory. Completed decisions are written atomically under Git's private `viva-decisions` directory; receipts hold only the identity hash, review ID, gate status and timestamp. Both passes and failures survive daemon restart, so a failed exam cannot turn into a new low-risk approval on retry. No diff, answer, question or model prose is persisted in this cache. Pending exams are regenerated after restart; their old links expire.
+
+`GET /v1/reviews/:id/feedback` exposes missed concepts and question locations from the in-memory review. `viva feedback <id>` formats them as untrusted data for the developer; only an explicit `--agent claude|codex` invokes an agent CLI, passing the feedback on stdin. Detailed feedback expires on daemon restart, with an explicit error; the gate decision remains. A skip leaves fog/mastery unchanged and is retained as `skipped-with-debt` in the local decision receipt.
+
 ## Design rules
 
 - **Fail open.** If the daemon is down, the push goes through with a warning. Reliability beats coverage, as in HRT's Blobby talk.
@@ -52,9 +62,9 @@ Each step stops the review if it can decide, so the cheapest step wins.
 - Traces don't exist yet. When they do, they must store stage names and token counts only, as `LlmRequest.user` holds the transcript.
 - `pnpm evals` still uses the mock provider, so check quality on real diffs is unmeasured.
 - The fog is per file, with blast radius at 0. Symbol-level needs entire-graph.
-- Reviews are held in memory, so restarting the daemon loses them.
+- Full reviews and feedback are held in memory. Only completed retry decisions survive daemon restart.
 - Ledger notes aren't pushed automatically yet.
-- The pipeline has only run on macOS. CI covers Windows, but nobody has tried the hook on Windows yet.
+- The pipeline and terminal hook have been exercised on macOS (including a PTY with piped hook stdin). CI covers Windows, but Windows controlling-console behaviour is not yet verified; console failure falls back to the browser.
 
 ## Open problems
 
