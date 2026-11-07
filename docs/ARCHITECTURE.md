@@ -46,7 +46,7 @@ Each step stops the review if it can decide, so the cheapest step wins.
 ## Known gaps
 
 - The Entire adapter and entire-graph are stubs. The session source returns nothing, and blast radius uses `git grep`.
-- Only the mock provider has been run. `GeminiProvider` is untested against the real API.
+- `pnpm evals` still uses the mock provider, so check quality on real diffs is unmeasured.
 - The fog is per file, with blast radius at 0. Symbol-level needs entire-graph.
 - Reviews are held in memory, so restarting the daemon loses them.
 - Ledger notes aren't pushed automatically yet.
