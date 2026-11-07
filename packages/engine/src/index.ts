@@ -3,6 +3,7 @@ export * from "./testing.js";
 export * from "./fog.js";
 export * from "./ledger/mastery.js";
 export * from "./ledger/notes.js";
+export * from "./ledger/sync.js";
 export * from "./llm/gemini.js";
 export * from "./llm/mock.js";
 export * from "./llm/provider.js";

@@ -659,3 +659,40 @@ describe("vivad", () => {
     if (stage === "done") expect(review.gate?.reason).toBe(reason);
   });
 });
+
+
+it("never awaits refresh on review, Fog or exam submission, and throttles each repo for a minute", async () => {
+  let finish!: (value: boolean) => void;
+  const stalled = new Promise<boolean>((resolve) => { finish = resolve; });
+  const ledgerSync = vi.fn(() => stalled);
+  let time = 0;
+  const app = createApp(new MockProvider(), { ledgerSync, now: () => time });
+  const request = fixture();
+  const other = fixture();
+  try {
+    const review = await start(app, request);
+    await vi.waitFor(() => expect(ledgerSync).toHaveBeenCalledTimes(1));
+    expect((await app.request("/v1/fog")).status).toBe(200);
+    await app.request(`/v1/fog?repo=${encodeURIComponent(`${review.request.repoPath}/.`)}`);
+    await vi.waitFor(() => expect(ledgerSync).toHaveBeenCalledTimes(1));
+    time = 60_001;
+    await app.request("/v1/fog");
+    await vi.waitFor(() => expect(ledgerSync).toHaveBeenCalledTimes(1)); // Still in flight, even after a minute.
+    await start(app, other);
+    await vi.waitFor(() => expect(ledgerSync).toHaveBeenCalledTimes(2));
+    await answer(app, review, "The behaviour now charges first.");
+    await vi.waitFor(() => expect(ledgerSync).toHaveBeenCalledTimes(3)); // Publication also returns immediately.
+    finish(false);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await app.request(`/v1/fog?repo=${encodeURIComponent(review.request.repoPath)}`);
+    await vi.waitFor(() => expect(ledgerSync).toHaveBeenCalledTimes(4));
+    await app.request(`/v1/fog?repo=${encodeURIComponent(review.request.repoPath)}`);
+    await vi.waitFor(() => expect(ledgerSync).toHaveBeenCalledTimes(4));
+    time = 119_999;
+    await app.request(`/v1/fog?repo=${encodeURIComponent(review.request.repoPath)}`);
+    await vi.waitFor(() => expect(ledgerSync).toHaveBeenCalledTimes(4));
+    time = 120_002;
+    await app.request(`/v1/fog?repo=${encodeURIComponent(review.request.repoPath)}`);
+    await vi.waitFor(() => expect(ledgerSync).toHaveBeenCalledTimes(5));
+  } finally { finish(false); }
+});

@@ -70,10 +70,13 @@ It is separate from the ledger, which still holds only scores and hashes. `.viva
 - **Fail open.** If the daemon is down, the push goes through with a warning. Reliability beats coverage, as in HRT's Blobby talk.
 - **Budget per review.** `MeteredProvider` counts tokens and enforces a cap, so a bug can't burn the credits.
 - **Separate grader.** The examiner converses, while the grader only sees the transcript and rubric, so accent and fluency can't affect a score.
-- **Ledger in git notes.** It needs no server, travels with the repo, and leaves your branch alone. `refs/notes/viva` has to be pushed explicitly to share it.
+- **Ledger in git notes.** It needs no server, travels with the repo, and leaves your branch alone. Reviews and Fog loads start a background fetch, at most once a minute per repo (and never overlapping a refresh), of `refs/notes/viva` from `origin` into a separate tracking ref and merge with `cat_sort_uniq`. Local notes are never overwritten. Exam attestations trigger background publication; `viva ledger sync` explicitly retries fetch, merge and publication. Pushes use `--no-verify` to avoid hook recursion and retry once after fetching and merging a competing update. Fetch and push share a 20-second network budget with an outer deadline for inherited helper pipes; local merges have no timeout. Requests read the available local ledger immediately and pick up fresh notes on the next read. Transport disables Git credential prompts and supplies noninteractive SSH only when neither SSH environment variable nor `core.sshCommand` is set. It fails open without logging Git output. Notes writes and merges are serialized within the daemon, including linked worktrees; network sync queues separately and never holds the local-write lock. Malformed lines are ignored when reading union notes. Failed publication leaves local entries available for a later explicit sync. Nothing beyond the existing attestations is added to notes.
 - **Understanding expires.** Mastery halves every 14 days, and halves again when the code changes.
 
 ## Known gaps
+
+- Anyone who can push to origin can add attestations under any name, which can earn `earned-trust` approvals. Attestations are published to origin automatically, so they are public on a public repo.
+- A network timeout on Windows can leave an SSH or remote-helper process alive even though the caller returns. Fetch uses a separate tracking ref, and local notes merges are never killed by the deadline, so it does not interrupt a writer holding `refs/notes/viva.lock`. After an external crash, Git may still leave a lock: Viva fails open and retains local notes. Do not automatically delete locks; only remove a confirmed stale lock after verifying no Git writer is active, then retry `viva ledger sync`.
 
 - entire-graph is a stub, and blast radius uses `git grep`.
 - The Entire session reader only sees checkpoints in local git refs. Commits linked after the fact with `entire session attach`, and checkpoints stored in another repo, return no session. Subagent transcripts are not read.
@@ -83,7 +86,6 @@ It is separate from the ledger, which still holds only scores and hashes. `.viva
 - `pnpm evals` is offline; `pnpm evals:live` measures Gemini claims. The corpus is small and hand-written, and Flash-Lite versus Flash is still unmeasured; see [EVALS.md](EVALS.md).
 - The fog is per file, with blast radius at 0. Symbol-level needs entire-graph.
 - Full reviews and feedback are held in memory. Only completed retry decisions survive daemon restart.
-- Ledger notes aren't pushed automatically yet.
 - The pipeline and terminal hook have been exercised on macOS (including a PTY with piped hook stdin). CI covers Windows, but Windows controlling-console behaviour is not yet verified; console failure falls back to the browser.
 
 ## Open problems

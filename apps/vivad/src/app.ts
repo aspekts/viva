@@ -1,3 +1,4 @@
+import { realpath } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Answer, FogMap, ReviewCode, ReviewFeedback, ReviewRequest, SavedMemory, VivaEvent, type Review } from "@viva/contracts";
@@ -10,6 +11,7 @@ import {
   fogVersion,
   GeminiProvider,
   grepBlastRadius,
+  git,
   loadChecks,
   loadFogFiles,
   MockProvider,
@@ -21,6 +23,7 @@ import {
   skipWithDebt,
   startReview,
   submitAnswers,
+  syncLedger,
   type LlmProvider,
 } from "@viva/engine";
 import { Hono } from "hono";
@@ -63,7 +66,20 @@ const CodeQuery = z.object({
  * The daemon only tracks reviews and serves the UI. Reviews stay on this
  * machine, and only attestations leave it, inside git notes.
  */
-export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 2000 } = {}) {
+export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 2000, ledgerSync = syncLedger, now = Date.now } = {}) {
+  const refreshes = new Map<string, { at: number; pending: boolean }>();
+  const refreshLedger = (repo: string) => {
+    // Canonical common-dir keys also throttle aliases and linked worktrees.
+    void (async () => {
+      const key = await realpath((await git(repo, ["rev-parse", "--path-format=absolute", "--git-common-dir"])).trim());
+      const last = refreshes.get(key);
+      if (last && (last.pending || now() - last.at < 60_000)) return;
+      const current = { at: now(), pending: true };
+      refreshes.set(key, current);
+      try { await ledgerSync(repo, { push: false }); }
+      finally { current.pending = false; }
+    })().catch(() => {});
+  };
   const reviews = new Map<string, Review>();
   const byKey = new Map<string, Promise<Review>>();
   const changing = new Set<string>();
@@ -103,6 +119,7 @@ export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 200
     let pending = byKey.get(key);
     if (!pending) {
       pending = (async () => {
+        refreshLedger(request.repoPath);
         const receipt = await readDecision(dir, key);
         const review: Review = receipt ? {
           id: receipt.reviewId, request, stage: "done", claims: [], plan: null, grades: [],
@@ -161,6 +178,7 @@ export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 200
       reviews.set(review.id, review);
       if (review.gate && allowsPush(review.gate)) passedAnswers.set(review.id, answers);
       await appendAttestations(review.request.repoPath, review.request.head, attestations);
+      void ledgerSync(review.request.repoPath).catch(() => false);
       await record(review);
       return c.json(review);
     } finally {
@@ -265,9 +283,12 @@ export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 200
   }));
 
   app.get("/v1/fog", async (c) => {
-    const fog = async (repoPath: string) => FogMap.parse({
-      repoPath, ...computeFog(await loadFogFiles(repoPath), await readLedger(repoPath), new Date()),
-    });
+    const fog = async (repoPath: string) => {
+      refreshLedger(repoPath);
+      return FogMap.parse({
+        repoPath, ...computeFog(await loadFogFiles(repoPath), await readLedger(repoPath), new Date()),
+      });
+    };
     const requested = c.req.query("repo");
     if (requested) return c.json(await fog(requested));
     const remembered = latestRepo;

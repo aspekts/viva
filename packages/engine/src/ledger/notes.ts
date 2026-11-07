@@ -1,5 +1,6 @@
 import { Attestation } from "@viva/contracts";
 import { git } from "../sources/git.js";
+import { withLedgerLock } from "./lock.js";
 
 export const NOTES_REF = "refs/notes/viva";
 
@@ -17,8 +18,11 @@ export async function readLedger(repoPath: string): Promise<Attestation[]> {
     if (!object) continue;
     const body = await git(repoPath, ["notes", "--ref", NOTES_REF, "show", object]);
     for (const row of body.split("\n").filter(Boolean)) {
-      const parsed = Attestation.safeParse(JSON.parse(row));
-      if (parsed.success) entries.push(parsed.data);
+      try {
+        const parsed = Attestation.safeParse(JSON.parse(row));
+        // An unreadable date would make mastery, and so the whole Fog, NaN.
+        if (parsed.success && Number.isFinite(Date.parse(parsed.data.at))) entries.push(parsed.data);
+      } catch { /* Union notes may contain malformed lines from another clone. */ }
     }
   }
   return entries;
@@ -26,5 +30,5 @@ export async function readLedger(repoPath: string): Promise<Attestation[]> {
 
 export async function appendAttestations(repoPath: string, commit: string, rows: Attestation[]): Promise<void> {
   if (rows.length === 0) return;
-  await git(repoPath, ["notes", "--ref", NOTES_REF, "append", "-F", "-", commit], rows.map((r) => JSON.stringify(r)).join("\n"));
+  await withLedgerLock(repoPath, () => git(repoPath, ["notes", "--ref", NOTES_REF, "append", "-F", "-", commit], rows.map((r) => JSON.stringify(r)).join("\n")));
 }

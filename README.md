@@ -50,6 +50,10 @@ After a passed exam you can choose to save your explanation as project memory: p
 
 The hook reads answers from the controlling console (`/dev/tty` on macOS/Linux, `CONIN$` on Windows), leaving Git's ref-data stdin untouched. If the console cannot be opened or used in raw mode, it falls back to the browser link. Terminal flow has been exercised through a macOS PTY; Windows console behaviour still needs hands-on verification. For offline development, set `VIVA_LLM=mock` in `.env`.
 
+## Share understanding with teammates
+
+Reviews and Fog loads start a background refresh of `refs/notes/viva` from `origin`, at most once a minute per repo, merging append-only attestations without overwriting local entries. They read local notes immediately; fresh teammate notes appear on the next read. After an exam it publishes notes in the background; notes pushes bypass the hook to avoid recursion. After pulling code, load the Fog to start a refresh, then reload to see teammates' understanding. Run `pnpm viva ledger sync` to explicitly fetch, merge and publish (set `VIVA_REPO` for another repo). Sync has a 20-second network budget for fetch and push, leaves local merges unbounded, disables Git credential prompts, and respects custom SSH configuration. It retries a rejected push once after another merge. Offline or missing remotes leave local notes intact and never block a review or push; retry the command when connected. Only existing ledger attestations travel, never exam transcripts or diffs.
+
 ## Commands
 
 | Command | What it does |

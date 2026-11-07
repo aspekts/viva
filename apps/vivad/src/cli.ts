@@ -3,7 +3,7 @@ import { chmodSync, existsSync, readFileSync, realpathSync, writeFileSync } from
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Review } from "@viva/contracts";
-import { allowsPush, readMemory } from "@viva/engine";
+import { allowsPush, readMemory, syncLedger } from "@viva/engine";
 import open from "open";
 import { ApiError, DaemonClient, SubmissionTimeoutError } from "./client.js";
 import { runExam } from "./exam.js";
@@ -120,6 +120,11 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
   const [command, sub, flag, agent] = args;
   if (command === "gate") return gate();
   if (command === "hook" && sub === "install") return installHook();
+  if (command === "ledger" && sub === "sync") {
+    const synced = await syncLedger(REPO);
+    console.log(synced ? "viva: ledger synced" : "viva: ledger sync unavailable; local notes retained, retry later");
+    return 0;
+  }
   if (command === "exam" && sub) return exam(sub);
   if (command === "feedback" && sub) {
     if ((flag && flag !== "--agent") || (flag === "--agent" && agent !== "claude" && agent !== "codex") || args.length > 4) {
@@ -141,7 +146,7 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
     console.log(formatMemory(file, await readMemory(root, file)));
     return 0;
   }
-  console.log("usage: viva gate | viva hook install | viva exam <reviewId> | viva feedback <reviewId> [--agent claude|codex] | viva remember <reviewId> | viva memory <file>");
+  console.log("usage: viva gate | viva hook install | viva ledger sync | viva exam <reviewId> | viva feedback <reviewId> [--agent claude|codex] | viva remember <reviewId> | viva memory <file>");
   return command ? 1 : 0;
 }
 
