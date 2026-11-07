@@ -42,6 +42,29 @@ export const directionCases: DirectionCase[] = [
     llmCalls: 5,
   },
   {
+    name: "requested reversal of a recorded decision",
+    intent: "reverse the order so the card is sent before it is checked",
+    before: { "src/pay.ts": pay, ".viva/memory/src/pay.ts.md": memory },
+    after: { "src/pay.ts": "export function pay(card) {\n  const sent = send(card);\n  check(card);\n  return sent;\n}\n" },
+    // Asking for the reversal lowers its risk, but it must still be examined.
+    expect: "exam",
+    direction: true,
+    llmCalls: 5,
+  },
+  {
+    name: "memory added in the same push",
+    intent: "return what send gives back",
+    before: { "src/pay.ts": pay },
+    after: {
+      "src/pay.ts": "export function pay(card) {\n  const sent = send(card);\n  check(card);\n  return sent;\n}\n",
+      ".viva/memory/src/pay.ts.md": memory,
+    },
+    // Memory is read at the push's base, so the push can't write what it is judged by.
+    expect: "low-risk",
+    direction: false,
+    llmCalls: 3,
+  },
+  {
     name: "consistent with a recorded decision",
     intent: "add a currency constant",
     before: { "src/pay.ts": pay, ".viva/memory/src/pay.ts.md": memory },

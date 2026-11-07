@@ -18,23 +18,25 @@ async function memoryFilesAt(repoPath: string, ref: string): Promise<Set<string>
 
 /**
  * Decisions recorded for the files a change touches. Plain git reads, no model,
- * so a push with no relevant memory costs nothing extra. Reads both ends of the
- * change: base, so a change can't hide the decision it reverses by editing its
- * memory, and head, for memory committed in the same push. Entries that try to
- * instruct the reviewer are dropped. Fails open: any error means no memory.
+ * so a push with no relevant memory costs nothing extra.
+ *
+ * Memory is read at the push's base commit only. It is an unsigned assertion in
+ * the repo, not a verified statement, so memory the push itself adds or edits
+ * never takes part in reviewing that push: a change can't rewrite the decision
+ * it reverses, or flood out older entries, and only reaches later pushes once
+ * it is part of their base. Entries that try to instruct the reviewer, or are
+ * filed under another path, are dropped. Fails open: any error means no memory.
  */
-export async function relevantMemory(repoPath: string, base: string, head: string, files: string[]): Promise<MemoryEntry[]> {
+export async function relevantMemory(repoPath: string, base: string, files: string[]): Promise<MemoryEntry[]> {
   const found = new Map<string, MemoryEntry>();
-  for (const ref of [base, head]) {
-    const present = await memoryFilesAt(repoPath, ref);
-    for (const file of files) {
-      const path = memoryPath(file);
-      if (!path || !present.has(path)) continue;
-      const text = await git(repoPath, ["show", `${ref}:${path}`]).catch(() => "");
-      for (const entry of parseMemory(text)) {
-        const quoted = [entry.claim, entry.question, entry.explanation, ...entry.symbols].join("\n");
-        if (entry.location.file === file && !looksLikeInjection(quoted)) found.set(entry.id, entry);
-      }
+  const present = await memoryFilesAt(repoPath, base);
+  for (const file of files) {
+    const path = memoryPath(file);
+    if (!path || !present.has(path)) continue;
+    const text = await git(repoPath, ["show", `${base}:${path}`]).catch(() => "");
+    for (const entry of parseMemory(text)) {
+      const quoted = [entry.claim, entry.question, entry.explanation, ...entry.symbols].join("\n");
+      if (entry.location.file === file && !looksLikeInjection(quoted) && !found.has(entry.id)) found.set(entry.id, entry);
     }
   }
   return [...found.values()].sort((a, b) => b.at.localeCompare(a.at)).slice(0, MAX_MEMORIES);

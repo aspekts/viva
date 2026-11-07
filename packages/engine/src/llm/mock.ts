@@ -33,9 +33,11 @@ interface MockMemory { id: string; file: string; lines: [number, number]; decisi
 
 /**
  * Stands in for the direction check: a memory is "reversed" when the diff removes
- * any line it covers. Deterministic and line-based, so it proves the wiring only.
+ * any line it covers, and requested when the intent says to reverse something.
+ * Deterministic and line-based, so it proves the wiring only.
  */
 function directionResponse(user: string): CheckResult {
+  const intent = /<untrusted name="intent">\n([\s\S]*?)\n<\/untrusted>/.exec(user)?.[1] ?? "";
   const memories: MockMemory[] = JSON.parse(/<untrusted name="memory">\n([\s\S]*?)\n<\/untrusted>/.exec(user)?.[1] ?? "[]");
   const removed: { file: string; old: number; next: number }[] = [];
   let file = "";
@@ -56,7 +58,7 @@ function directionResponse(user: string): CheckResult {
       const hit = removed.find((r) => r.file === m.file && r.old >= m.lines[0] && r.old <= m.lines[1]);
       return hit ? [{
         summary: `You told us ${m.decision} was deliberate; this change reverses it`,
-        origin: "silent" as const,
+        origin: /\brevers/i.test(intent) ? "requested" as const : "silent" as const,
         symbols: [],
         location: { file: m.file, lines: [Math.max(1, hit.next), Math.max(1, hit.next)] as [number, number] },
         evidence: `Memory ${m.id}, saved by ${m.person}`,

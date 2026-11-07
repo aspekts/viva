@@ -23,8 +23,8 @@ export interface ReviewDeps {
   ledger: Attestation[];
   config?: VivaConfig;
   now?: () => Date;
-  /** Recorded decisions for the changed files. Defaults to reading `.viva/memory/` from git. */
-  memory?: (repoPath: string, base: string, head: string, files: string[]) => Promise<MemoryEntry[]>;
+  /** Recorded decisions for the changed files, as of the push's base. Defaults to reading `.viva/memory/` from git. */
+  memory?: (repoPath: string, base: string, files: string[]) => Promise<MemoryEntry[]>;
 }
 
 const finish = (review: Review, gate: Gate, now: Date): Review => ({
@@ -61,12 +61,16 @@ export async function startReview(request: ReviewRequest, deps: ReviewDeps): Pro
   if (injection) return finish(review, injection, now());
 
   const session = await resolveSession(deps.session, request.repoPath, request.head, request.intent);
-  // Deterministic, before any model call. Missing or broken memory must never block a push.
-  const memory = await (deps.memory ?? relevantMemory)(request.repoPath, request.base, request.head, change.files.map((f) => f.path))
+  // Deterministic, before any model call. Read at base only, so the push can't write the memory it is judged by.
+  // Missing or broken memory must never block a push.
+  const memory = await (deps.memory ?? relevantMemory)(request.repoPath, request.base, change.files.map((f) => f.path))
     .catch(() => []);
   const claims = await runChecks(deps.checks, change, session, llm, memory);
-  // Knowing the code doesn't settle whether reversing a recorded decision is intended.
+  // Knowing the code, or having asked for the change, doesn't settle whether reversing a
+  // recorded decision is the right direction. So these claims ignore mastery and always
+  // reach the exam, rather than depending on the risk threshold.
   const memoryChecks = new Set(deps.checks.filter((c) => c.needs === "memory").map((c) => c.name));
+  const reversesMemory = (claim: Claim) => memoryChecks.has(claim.check);
 
   const inputs = new Map<string, number>();
   const hashes = new Map<string, string | null>();
@@ -83,15 +87,17 @@ export async function startReview(request: ReviewRequest, deps: ReviewDeps): Pro
     (claim) => ({
       blastRadius: inputs.get(claim.id) ?? 0,
       untested: tested ? 0.25 : 1,
-      mastery: memoryChecks.has(claim.check)
+      mastery: reversesMemory(claim)
         ? 0
         : masteryFor(deps.ledger, request.person, claim.location.file, hashes.get(claim.location.file) ?? null, now(), config),
     }),
     config,
+    reversesMemory,
   );
   review = { ...review, claims: ranked };
 
-  const risky = ranked.filter((c) => c.risk >= config.riskThreshold).slice(0, config.maxQuestions);
+  // Ranked claims put reversals of recorded decisions first, so they always fit within maxQuestions.
+  const risky = ranked.filter((c) => reversesMemory(c) || c.risk >= config.riskThreshold).slice(0, config.maxQuestions);
   if (risky.length === 0) {
     const earned = ranked.length > 0 && ranked.every((c) => c.inputs.mastery > 0.5);
     return finish(
