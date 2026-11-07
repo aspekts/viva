@@ -49,5 +49,5 @@ export class MeteredProvider implements LlmProvider {
 
 /** Wraps untrusted text so prompts can treat it as data, never as instructions. */
 export function untrusted(label: string, text: string): string {
-  return `<untrusted name="${label}">\n${text.replaceAll("</untrusted", "<\\/untrusted")}\n</untrusted>`;
+  return `<untrusted name="${label}">\n${text.replace(/<(\s*)\/(\s*untrusted)/gi, "<$1\\/$2")}\n</untrusted>`;
 }
