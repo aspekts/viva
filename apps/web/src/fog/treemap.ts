@@ -52,13 +52,15 @@ export function layoutTreemap(
   items: readonly TreemapItem[],
   bounds: Rect,
 ): Tile[] {
-  if (items.length === 0) return [];
+  const validBounds = Number.isFinite(bounds.w * bounds.h) && bounds.w > 0 && bounds.h > 0;
+  if (items.length === 0 || !validBounds) return [];
 
-  const largest = Math.max(...items.map((i) => i.weight), 0);
+  const usable = items.map((i) => (Number.isFinite(i.weight) && i.weight > 0 ? i.weight : 0));
+  const largest = Math.max(...usable, 0);
   const floor = largest > 0 ? largest * MIN_WEIGHT_SHARE : 1;
-  const weights = items.map((i) => ({
+  const weights = items.map((i, index) => ({
     key: i.key,
-    weight: Math.max(i.weight, floor),
+    weight: Math.max(usable[index] ?? 0, floor),
   }));
   const totalWeight = weights.reduce((sum, i) => sum + i.weight, 0);
   const scale = (bounds.w * bounds.h) / totalWeight;

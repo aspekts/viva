@@ -12,9 +12,14 @@ const tileWeight = (node: FogNode): number => Math.sqrt(node.size);
 const percent = (value: number): string => `${value}%`;
 
 const knownByLabel = (node: FogNode): string =>
-  node.knownBy.length > 0 ? node.knownBy.map((k) => k.person).join(", ") : "Understood by nobody";
+  node.knownBy.length > 0
+    ? node.knownBy.map((k) => k.person).join(", ")
+    : "Understood by nobody";
 
-const fogLabel = (node: FogNode): string => `${Math.round(node.fog * 100)}% fog`;
+const nodeName = (node: FogNode): string => (node.symbol ? `${node.file} › ${node.symbol}` : node.file);
+
+const fogLabel = (node: FogNode): string =>
+  `${Math.round(node.fog * 100)}% fog`;
 
 interface FogTileProps {
   node: FogNode;
@@ -25,7 +30,7 @@ const FogTile = ({ node, rect }: FogTileProps) => (
   <article
     className="fog-node"
     tabIndex={0}
-    aria-label={`${node.file}. ${fogLabel(node)}. ${knownByLabel(node)}.`}
+    aria-label={`${nodeName(node)}. ${fogLabel(node)}. ${knownByLabel(node)}.`}
     title={`${node.file}\n${fogLabel(node)}\n${knownByLabel(node)}`}
     style={
       {
@@ -38,7 +43,7 @@ const FogTile = ({ node, rect }: FogTileProps) => (
     }
   >
     <div className="fog-label">
-      <span className="fog-file">{node.file}</span>
+      <span className="fog-file">{nodeName(node)}</span>
       <small>{knownByLabel(node)}</small>
     </div>
   </article>
@@ -54,29 +59,42 @@ export function FogView() {
   }, []);
 
   const tiles = useMemo(
-    () => (map ? layoutTreemap(map.nodes.map((n) => ({ key: n.id, weight: tileWeight(n) })), MAP) : []),
+    () =>
+      map
+        ? layoutTreemap(
+            map.nodes.map((n, index) => ({ key: String(index), weight: tileWeight(n) })),
+            MAP,
+          )
+        : [],
     [map],
   );
 
-  if (error) return <p role="alert">Could not load the map: {error}. Add ?mock to the URL to use sample data.</p>;
+  if (error)
+    return (
+      <p role="alert">
+        Could not load the map: {error}. Add ?mock to the URL to use sample
+        data.
+      </p>
+    );
   if (!map) return <p>Loading the map…</p>;
 
-  const nodesById = new Map(map.nodes.map((n) => [n.id, n]));
   return (
     <section>
       <header className="fog-header">
         <h1>Comprehension debt: {Math.round(map.debt).toLocaleString()}</h1>
         <p className="fog-legend">
-          <span className="fog-swatch fog-swatch-clear" /> understood
-          <span className="fog-swatch fog-swatch-fog" /> understood by nobody
+          <span className="fog-swatch fog-swatch-clear" aria-hidden="true" /> understood
+          <span className="fog-swatch fog-swatch-fog" aria-hidden="true" /> understood by nobody
         </p>
       </header>
       {map.nodes.length === 0 ? (
-        <p>No files mapped yet. Push a change, or add ?mock to see sample data.</p>
+        <p>
+          No files mapped yet. Push a change, or add ?mock to see sample data.
+        </p>
       ) : (
         <div className="fog-map">
           {tiles.map(({ key, rect }) => {
-            const node = nodesById.get(key);
+            const node = map.nodes[Number(key)];
             return node ? <FogTile key={key} node={node} rect={rect} /> : null;
           })}
         </div>

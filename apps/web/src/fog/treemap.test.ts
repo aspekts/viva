@@ -71,4 +71,33 @@ describe("layoutTreemap", () => {
       expect(Math.max(rect.w / rect.h, rect.h / rect.w)).toBeLessThan(4);
     }
   });
+
+  it("treats NaN and Infinity weights as empty instead of corrupting the layout", () => {
+    const tiles = layoutTreemap(
+      [
+        { key: "real", weight: 10 },
+        { key: "nan", weight: Number.NaN },
+        { key: "inf", weight: Number.POSITIVE_INFINITY },
+      ],
+      BOUNDS,
+    );
+    expect(tiles).toHaveLength(3);
+    expect(tiles.every((t) => Object.values(t.rect).every(Number.isFinite))).toBe(true);
+    expect(tiles.reduce((sum, t) => sum + area(t.rect), 0)).toBeCloseTo(area(BOUNDS), 6);
+  });
+
+  it("returns nothing for bounds with no area", () => {
+    expect(layoutTreemap([{ key: "a", weight: 1 }], { x: 0, y: 0, w: 0, h: 10 })).toEqual([]);
+    expect(layoutTreemap([{ key: "a", weight: 1 }], { x: 0, y: 0, w: Number.NaN, h: 10 })).toEqual([]);
+  });
+
+  it("keeps every tile inside the bounds", () => {
+    const items = Array.from({ length: 12 }, (_, i) => ({ key: `n${i}`, weight: i + 1 }));
+    for (const { rect } of layoutTreemap(items, BOUNDS)) {
+      expect(rect.x).toBeGreaterThanOrEqual(-1e-9);
+      expect(rect.y).toBeGreaterThanOrEqual(-1e-9);
+      expect(rect.x + rect.w).toBeLessThanOrEqual(BOUNDS.w + 1e-9);
+      expect(rect.y + rect.h).toBeLessThanOrEqual(BOUNDS.h + 1e-9);
+    }
+  });
 });
