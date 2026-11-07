@@ -49,7 +49,7 @@ const overlaps = (region: RequestedRegion, claim: Claim) => {
 };
 
 /** The seeded change, however it was labelled. */
-const seededClaim = (expected: ExpectedClaim, claims: Claim[]) => claims.find((claim) =>
+export const seededClaim = (expected: ExpectedClaim, claims: Claim[]) => claims.find((claim) =>
   overlaps(expected, claim) && expected.concepts.every((concept) => concept.test(`${claim.summary}\n${claim.evidence}`)));
 
 /** Never count unrelated findings, or concepts scattered over several claims. */

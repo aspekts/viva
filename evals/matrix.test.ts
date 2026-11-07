@@ -3,6 +3,7 @@ import type { Claim } from "@viva/contracts";
 import { GeminiProvider, loadChecks, type LlmProvider } from "@viva/engine";
 import { fileURLToPath } from "node:url";
 import { cases, checkNames, holdoutIds, type EvalCase } from "./cases/index.js";
+import { runExamEval, summarizeExam } from "./exam.js";
 import { gradeClaims, hash, matchesClaim, report, runMatrix, safeError, summarize } from "./matrix.js";
 import { main } from "./run.js";
 
@@ -171,6 +172,41 @@ describe("eval pacing and reporting", () => {
     const matrix = await runMatrix(selection, await checks(), provider, "test");
     expect(summarize(matrix, selection).requestedCorrect).toBe("2/2 (100.0%)");
     expect(report(matrix, selection)).toMatch(/\| tune \|[\s\S]*\| holdout \|/);
+  });
+});
+
+describe("exam eval", () => {
+  const seeded = { ...finding, summary: "The strict boundary skips the final full page." };
+  const scripted = (claims: Claim[], wrongPasses = false): LlmProvider => ({
+    id: "test",
+    async complete(request) {
+      if (request.name.startsWith("check:")) return { value: request.schema.parse({ claims }), inputTokens: 1, outputTokens: 1 };
+      if (request.name === "plan") {
+        const claimId = /"id":"([^"]+)"/.exec(request.user)![1];
+        const question = { id: "q1", claimId, ask: "What happens to the last batch?", mustMention: ["it is dropped"], followUpIfVague: "Try an exact multiple.", location: finding.location };
+        return { value: request.schema.parse({ questions: [question] }), inputTokens: 1, outputTokens: 1 };
+      }
+      const pass = wrongPasses || !/Nothing really changes|logs a warning/.test(request.user);
+      const grade = { questionId: "q1", verdict: pass ? "approve" : "reject", score: pass ? 1 : 0, missing: [] };
+      return { value: request.schema.parse({ grades: [grade] }), inputTokens: 1, outputTokens: 1 };
+    },
+  });
+
+  it("grades a right and a wrong answer on the seeded question, without its text in the row", async () => {
+    const rows = await runExamEval([bug], await checks(), scripted([seeded]));
+    expect(rows[0]).toMatchObject({ outcome: "exam", onTarget: true, right: "approve", wrong: "reject", problems: [] });
+    expect(summarizeExam(rows, [bug])).toMatchObject({ onTarget: "1/1", rightAnswersPass: "1/1", wrongAnswersFail: "1/1" });
+    expect(JSON.stringify(rows)).not.toContain("last batch");
+  });
+  it("counts a rubric that passes the wrong answer", async () => {
+    const rows = await runExamEval([bug], await checks(), scripted([seeded], true));
+    expect(summarizeExam(rows, [bug]).wrongAnswersFail).toBe("0/1");
+  });
+  it("skips grading when the exam is about something else, and counts clean interruptions", async () => {
+    const rows = await runExamEval([bug, clean], await checks(), scripted([{ ...seeded, summary: "Renames a local", evidence: "name" }]));
+    expect(rows[0]).toMatchObject({ onTarget: false });
+    expect(rows[0]!.right).toBeUndefined();
+    expect(summarizeExam(rows, [bug, clean])).toMatchObject({ onTarget: "0/1", interruptedOnCleanOrRequested: "1/1" });
   });
 });
 

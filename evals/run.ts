@@ -7,6 +7,7 @@ import {
 } from "@viva/engine";
 import { cases, holdoutIds } from "./cases/index.js";
 import { smokeCases } from "./cases/smoke.js";
+import { runExamEval, summarizeExam } from "./exam.js";
 import { formatRow, REPORT_MARKER, report, runMatrix, safeError, summarize } from "./matrix.js";
 
 const CHECKS_DIR = fileURLToPath(new URL("../checks", import.meta.url));
@@ -63,6 +64,12 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
     console.table(smoke);
     if (smoke.some((r) => !r.pass)) return 1;
     console.log(`${smoke.length}/${smoke.length} pipeline smoke assertions passed (mock only).`);
+  }
+  if (args.includes("--exam")) {
+    if (!live) throw new Error("--exam requires --live");
+    const rows = await runExamEval(selected, await loadChecks(CHECKS_DIR), llm, (row) => console.log(JSON.stringify(row)), paceMs);
+    console.log(JSON.stringify(summarizeExam(rows, selected)));
+    return rows.some((row) => row.error) ? 1 : 0;
   }
   console.log(`Provider: ${llm.id}; model: ${model}. Sequential check calls.`);
   console.log("| Case | behaviour-change | failure-path | silent-decision | Latency ms | Tokens in / out |");
