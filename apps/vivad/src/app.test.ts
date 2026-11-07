@@ -644,15 +644,18 @@ describe("vivad", () => {
   });
 
   it.each([
-    ["re-examines a pass recorded before policy 2, as it may have asked nothing", "exam-passed", "approve", "awaiting-exam"],
-    ["keeps a failure recorded before policy 2", "exam-failed", "reject", "done"],
-  ])("%s", async (_, reason, verdict, stage) => {
+    ["re-examines a pass recorded before policy 2, as it may have asked nothing", undefined, "exam-passed", "approve", "awaiting-exam"],
+    ["re-examines a pass recorded under policy 2, as one answer may have passed two questions", 2, "exam-passed", "approve", "awaiting-exam"],
+    ["keeps a failure recorded before policy 2", undefined, "exam-failed", "reject", "done"],
+    ["keeps a failure recorded under policy 2", 2, "exam-failed", "reject", "done"],
+    ["keeps a skip recorded under policy 2", 2, "skipped-with-debt", "approve", "done"],
+  ])("%s", async (_, policy, reason, verdict, stage) => {
     const request = fixture();
     const { key, dir } = await decisionIdentity(request);
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, `${key}.json`), JSON.stringify({
       key, reviewId: "5f0c6a8e-6f3b-4c55-9d43-2b4d7a1f9e10", finishedAt: new Date().toISOString(),
-      gate: { verdict, reason, skippable: true },
+      gate: { verdict, reason, skippable: true }, ...(policy ? { policy } : {}),
     }));
     const review = await start(createApp(new MockProvider()), request);
     expect(review.stage).toBe(stage);
