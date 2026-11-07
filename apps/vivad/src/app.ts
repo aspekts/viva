@@ -1,3 +1,4 @@
+import { realpath } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { Answer, FogMap, ReviewCode, ReviewFeedback, ReviewRequest, SavedMemory, VivaEvent, type Review } from "@viva/contracts";
 import {
@@ -9,6 +10,7 @@ import {
   fogVersion,
   GeminiProvider,
   grepBlastRadius,
+  git,
   loadChecks,
   loadFogFiles,
   MockProvider,
@@ -48,7 +50,20 @@ const CodeQuery = z.object({
  * The daemon only tracks reviews and serves the UI. Reviews stay on this
  * machine, and only attestations leave it, inside git notes.
  */
-export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 2000 } = {}) {
+export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 2000, ledgerSync = syncLedger, now = Date.now } = {}) {
+  const refreshes = new Map<string, { at: number; pending: boolean }>();
+  const refreshLedger = (repo: string) => {
+    // Canonical common-dir keys also throttle aliases and linked worktrees.
+    void (async () => {
+      const key = await realpath((await git(repo, ["rev-parse", "--path-format=absolute", "--git-common-dir"])).trim());
+      const last = refreshes.get(key);
+      if (last && (last.pending || now() - last.at < 60_000)) return;
+      const current = { at: now(), pending: true };
+      refreshes.set(key, current);
+      try { await ledgerSync(repo, { push: false }); }
+      finally { current.pending = false; }
+    })().catch(() => {});
+  };
   const reviews = new Map<string, Review>();
   const byKey = new Map<string, Promise<Review>>();
   const changing = new Set<string>();
@@ -88,7 +103,7 @@ export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 200
     let pending = byKey.get(key);
     if (!pending) {
       pending = (async () => {
-        await syncLedger(request.repoPath, { push: false });
+        refreshLedger(request.repoPath);
         const receipt = await readDecision(dir, key);
         const review: Review = receipt ? {
           id: receipt.reviewId, request, stage: "done", claims: [], plan: null, grades: [],
@@ -102,8 +117,7 @@ export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 200
           ledger: await readLedger(request.repoPath),
         });
         if (!receipt) await writeDecision(review);
-        void syncLedger(review.request.repoPath);
-      await record(review);
+        await record(review);
         return review;
       })();
       byKey.set(key, pending);
@@ -148,6 +162,7 @@ export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 200
       reviews.set(review.id, review);
       if (review.gate && allowsPush(review.gate)) passedAnswers.set(review.id, answers);
       await appendAttestations(review.request.repoPath, review.request.head, attestations);
+      void ledgerSync(review.request.repoPath).catch(() => false);
       await record(review);
       return c.json(review);
     } finally {
@@ -253,7 +268,7 @@ export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 200
 
   app.get("/v1/fog", async (c) => {
     const fog = async (repoPath: string) => {
-      await syncLedger(repoPath, { push: false });
+      refreshLedger(repoPath);
       return FogMap.parse({
         repoPath, ...computeFog(await loadFogFiles(repoPath), await readLedger(repoPath), new Date()),
       });

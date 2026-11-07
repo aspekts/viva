@@ -53,7 +53,7 @@ async function team() {
   return { a, b, remote, root, base: seed.base, head: seed.head, row };
 }
 
-it("a passed viva in clone A clears Fog in clone B after pull and Fog load", async () => {
+it("a passed viva in clone A clears Fog in clone B after pull and background refresh", async () => {
   const { a, b, base, head } = await team();
   const files = await loadFogFiles(b);
   expect(computeFog(files, await readLedger(b), new Date()).nodes[0]?.fog).toBe(1);
@@ -66,6 +66,9 @@ it("a passed viva in clone A clears Fog in clone B after pull and Fog load", asy
   // Queue a fetch-only operation behind background publication; the test does not publish.
   expect(await sync(a, false)).toBe(true);
   git(b, "pull", "--ff-only");
+  await app.request(`/v1/fog?repo=${encodeURIComponent(b)}`);
+  // A subsequent read picks up the background fetch; no request waits for it.
+  await sync(b, false);
   const map = FogMap.parse(await (await app.request(`/v1/fog?repo=${encodeURIComponent(b)}`)).json());
   expect(map.nodes[0]?.fog).toBeLessThan(0.3);
   expect(map.nodes[0]?.knownBy[0]?.person).toBe("Alice");
@@ -135,4 +138,20 @@ it("bounds a stalled network request and leaves the ledger readable", async () =
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
+});
+
+
+it("ignores a malformed teammate line after union sync, keeping Fog and reviews available", async () => {
+  const { a, b, base, head, row } = await team();
+  await appendAttestations(b, head, [row("Bob")]);
+  git(a, "notes", "--ref", "viva", "append", "-m", "not JSON from a teammate", head);
+  expect(await sync(a)).toBe(true);
+  expect(await sync(b)).toBe(true);
+  expect(await readLedger(b)).toHaveLength(1);
+  const app = createApp(new MockProvider());
+  expect((await app.request(`/v1/fog?repo=${encodeURIComponent(b)}`)).status).toBe(200);
+  const response = await app.request("/v1/reviews", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ repoPath: b, base, head, person: "Carol" }) });
+  expect(response.status).toBe(200);
+  expect(Review.parse(await response.json()).stage).toBe("awaiting-exam");
+  await sync(b, false);
 });

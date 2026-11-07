@@ -18,8 +18,10 @@ export async function readLedger(repoPath: string): Promise<Attestation[]> {
     if (!object) continue;
     const body = await git(repoPath, ["notes", "--ref", NOTES_REF, "show", object]);
     for (const row of body.split("\n").filter(Boolean)) {
-      const parsed = Attestation.safeParse(JSON.parse(row));
-      if (parsed.success) entries.push(parsed.data);
+      try {
+        const parsed = Attestation.safeParse(JSON.parse(row));
+        if (parsed.success) entries.push(parsed.data);
+      } catch { /* Union notes may contain malformed lines from another clone. */ }
     }
   }
   return entries;
