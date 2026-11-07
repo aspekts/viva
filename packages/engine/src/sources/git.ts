@@ -43,6 +43,40 @@ export async function loadChange(repoPath: string, base: string, head: string): 
   return { diff, files, totalLines: files.reduce((sum, f) => sum + f.added + f.removed, 0) };
 }
 
+/**
+ * Models miscount lines in a raw diff, so print each new-file line's number after
+ * its marker. Tracks hunk sizes, so a code line that looks like a header stays code.
+ */
+export function numberDiff(diff: string): string {
+  let oldLeft = 0;
+  let newLeft = 0;
+  let line = 0;
+  return diff
+    .split("\n")
+    .map((raw) => {
+      if (oldLeft > 0 || newLeft > 0) {
+        const marker = raw[0];
+        if (marker === "\\") return raw;
+        if (marker === "-") {
+          oldLeft -= 1;
+          return `-${" ".repeat(String(line).length)}|${raw.slice(1)}`;
+        }
+        newLeft -= 1;
+        if (marker !== "+") oldLeft -= 1;
+        line += 1;
+        return `${marker === "+" ? "+" : " "}${line - 1}|${raw.slice(1)}`;
+      }
+      const hunk = /^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(raw);
+      if (hunk) {
+        oldLeft = Number(hunk[1] ?? 1);
+        line = Number(hunk[2]);
+        newLeft = Number(hunk[3] ?? 1);
+      }
+      return raw;
+    })
+    .join("\n");
+}
+
 /** Identifies a file's exact content, so understanding can expire when it changes. */
 export async function blobHash(repoPath: string, ref: string, path: string): Promise<string> {
   return (await git(repoPath, ["rev-parse", `${ref}:${path}`])).trim();

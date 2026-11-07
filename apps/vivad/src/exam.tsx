@@ -5,6 +5,7 @@ import type { ReadStream, WriteStream } from "node:tty";
 import type { Answer, Review, SavedMemory } from "@viva/contracts";
 import { allowsPush } from "@viva/engine";
 import type { DaemonClient } from "./client.js";
+import { terminalText } from "./terminal-text.js";
 
 export function Exam({ initial, client, finish, fail }: {
   initial: Review; client: DaemonClient; finish: (review: Review | null) => void; fail: (error: unknown) => void;
@@ -58,14 +59,14 @@ export function Exam({ initial, client, finish, fail }: {
     <Text bold>Viva · {review.id}</Text>
     {question && <>
       <Text>Question {answers.length + 1}/{review.plan?.questions.length}</Text>
-      <Text color="cyan">{question.location.file}:{question.location.lines.join("–")}</Text>
-      <Text>{question.ask}</Text>
+      <Text color="cyan">{terminalText(question.location.file)}:{question.location.lines.join("–")}</Text>
+      <Text>{terminalText(question.ask)}</Text>
       {!busy && !confirmSkip && <Box><Text>Answer: </Text><TextInput value={text} onChange={setText} onSubmit={submit} /></Box>}
     </>}
     {busy && <Text>Submitting to the daemon…</Text>}
     {review.gate && <>
       <Text bold color={allowsPush(review.gate) ? "green" : "yellow"}>{review.gate.verdict} ({review.gate.reason})</Text>
-      {review.grades.map((g) => <Text key={g.questionId}>{g.questionId}: {g.verdict}{g.missing.length ? ` · missed: ${g.missing.join(", ")}` : ""}</Text>)}
+      {review.grades.map((g) => <Text key={g.questionId}>{terminalText(g.questionId)}: {g.verdict}{g.missing.length ? ` · missed: ${g.missing.map(terminalText).join(", ")}` : ""}</Text>)}
       {!review.gate.skippable && <Text>Hard gate: cannot skip. Resolve the flagged change and push again.</Text>}
       {canRemember && <Text>m: save your explanation as project memory in .viva/memory/, so future agents know why</Text>}
       {memory === "failed" && <Text>Could not save your explanation. Your push is unaffected.</Text>}
