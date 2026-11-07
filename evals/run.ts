@@ -9,6 +9,7 @@ import { cases, holdoutIds } from "./cases/index.js";
 import { smokeCases } from "./cases/smoke.js";
 import { runExamEval, summarizeExam } from "./exam.js";
 import { formatRow, REPORT_MARKER, report, runMatrix, safeError, summarize } from "./matrix.js";
+import { runDirectionEvals } from "./direction.js";
 
 const CHECKS_DIR = fileURLToPath(new URL("../checks", import.meta.url));
 
@@ -67,7 +68,7 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
     // Disable 429 retries and fallback: this is a shared free-tier key.
     llm = new GeminiProvider(process.env.GEMINI_API_KEY, model, undefined, 800, false);
   } else {
-    const smoke = await runEvals();
+    const smoke = [...await runEvals(), ...await runDirectionEvals(new MockProvider(), await loadChecks(CHECKS_DIR))];
     console.table(smoke);
     if (smoke.some((r) => !r.pass)) return 1;
     console.log(`${smoke.length}/${smoke.length} pipeline smoke assertions passed (mock only).`);

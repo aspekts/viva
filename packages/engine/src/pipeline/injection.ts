@@ -8,13 +8,18 @@ const PATTERNS = [
   /\b(viva|reviewer|grader|examiner)\b.{0,40}\b(approve|pass|skip|mark)\b/i,
 ];
 
+/** True for text that tries to instruct a reviewer. Used on anything a prompt will quote. */
+export function looksLikeInjection(text: string): boolean {
+  return PATTERNS.some((p) => p.test(text));
+}
+
 /** Scans added lines only. A match defers to a human and cannot be skipped. */
 export function scanForInjection(diff: string): Gate | null {
   const added = diff
     .split("\n")
     .filter((l) => l.startsWith("+") && !l.startsWith("+++"))
     .join("\n");
-  return PATTERNS.some((p) => p.test(added))
+  return looksLikeInjection(added)
     ? { verdict: "defer", reason: "injection-suspected", skippable: false }
     : null;
 }
