@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +9,7 @@ import { Review } from "@viva/contracts";
 import { MockProvider } from "@viva/engine";
 import { expect, it } from "vitest";
 import { fixtureRepo } from "../../../packages/engine/src/testing.js";
+import { isEntrypoint } from "./cli.js";
 import { createApp } from "./app.js";
 
 const exec = promisify(execFile);
@@ -68,3 +69,22 @@ it("blocks a nonterminal push quickly, reuses a passed exam across restart, and 
     rmSync(remote, { recursive: true, force: true });
   }
 }, 30_000);
+
+
+it("runs the CLI through a symlinked checkout instead of silently exiting zero", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "viva-cli-link-"));
+  const root = fileURLToPath(new URL("../../../", import.meta.url));
+  const linked = join(directory, "checkout");
+  try {
+    symlinkSync(root, linked, process.platform === "win32" ? "junction" : "dir");
+    const entry = join(linked, "apps", "vivad", "src", "cli.ts");
+    expect(isEntrypoint(entry)).toBe(true);
+    expect(isEntrypoint(undefined)).toBe(false);
+    expect(isEntrypoint(join(directory, "missing.ts"))).toBe(false);
+    // Invalid commands exit 1 and print usage; the old guard exited 0 silently.
+    const result = await exec(process.execPath, ["--import", "tsx", entry, "invalid-command"], { timeout: 10_000 })
+      .catch((error: { code: number; stdout: string }) => error);
+    expect(result).toHaveProperty("code", 1);
+    expect(result.stdout).toContain("usage: viva gate");
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
