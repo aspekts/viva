@@ -1,0 +1,74 @@
+Update on pull request #39 (https://github.com/aspekts/viva/pull/39), which T3 Code is watching for you:
+- All 4 checks passed on 1e83e62.
+
+Look into each item and act on it as your task requires. This PR stays linked and watched, so do not link, watch, or list it again. End your turn when you are done, and T3 Code wakes you on the next change. When you hand the work back to the user, call unwatch_pull_request first so the thread returns to their inbox.
+
+---
+
+Update on pull request #39 (https://github.com/aspekts/viva/pull/39), which T3 Code is watching for you:
+- 1 new comment:
+  - coderabbitai: "> [!IMPORTANT] > ## Review skipped > > Auto reviews are disabled on base/target branches other than the default branch. > > > > Please check the settings in the CodeRabbit UI or the `.coderabbit.ya..." https://github.com/aspekts/viva/pull/39#issuecomment-6713402113
+
+Look into each item and act on it as your task requires. This PR stays linked and watched, so do not link, watch, or list it again. End your turn when you are done, and T3 Code wakes you on the next change. When you hand the work back to the user, call unwatch_pull_request first so the thread returns to their inbox.
+
+---
+
+Update on pull request #35 (https://github.com/aspekts/viva/pull/35), which T3 Code is watching for you:
+- 1 new comment:
+  - coderabbitai: "> [!IMPORTANT] > ## Review skipped > > Auto reviews are disabled on base/target branches other than the default branch. > > > > Please check the settings in the CodeRabbit UI or the `.coderabbit.ya..." https://github.com/aspekts/viva/pull/35#issuecomment-6713339831
+
+Look into each item and act on it as your task requires. This PR stays linked and watched, so do not link, watch, or list it again. End your turn when you are done, and T3 Code wakes you on the next change. When you hand the work back to the user, call unwatch_pull_request first so the thread returns to their inbox.
+
+---
+
+Update on pull request #39 (https://github.com/aspekts/viva/pull/39), which T3 Code is watching for you:
+- All 4 checks passed on 01eba06.
+
+Look into each item and act on it as your task requires. This PR stays linked and watched, so do not link, watch, or list it again. End your turn when you are done, and T3 Code wakes you on the next change. When you hand the work back to the user, call unwatch_pull_request first so the thread returns to their inbox.
+
+---
+
+Update on pull request #35 (https://github.com/aspekts/viva/pull/35), which T3 Code is watching for you:
+- All 4 checks passed on b5280f6.
+
+Look into each item and act on it as your task requires. This PR stays linked and watched, so do not link, watch, or list it again. End your turn when you are done, and T3 Code wakes you on the next change. When you hand the work back to the user, call unwatch_pull_request first so the thread returns to their inbox.
+
+---
+
+for the purposes of time i want us to work on our own issues with a combo of sol 6.1 and opus 5.5 to make sure we are also getting through our sprints on time, and achieving any stretch goals if we have time for it (i’m thinking especially the memory layer) for anything that could give us a bigger moat and enhance our pitch for the demo for each of the judges
+
+---
+
+i also want independent reviews of pre done prs with one of the models that we have available between opus sol and deepseek 4.- flash to help us actually merge the code we’re doing (if it’s safe to do so) so that we can move forward and actually have stuff shipped and tested to move forward with once i’m back on track
+
+---
+
+Delegated task node:delegated-task:command%3Amcp%3Af9010e19-eb5e-4ec0-a950-6853cf3b280f%3Adelegate-task%3Ae0e8d4bf-c225-44bb-93e7-cc026081f18c (Review stack #8 #35 #37-39 (Sol)) [completed]:
+Reviewed each PR’s own diff and body. **#8 is safe; #35 and #38 need fixes. #37 and #39 have no independent blockers, but inherit the stack’s blockers.**
+
+| PR | Verdict | Findings and notes |
+|---|---|---|
+| [#8](https://github.com/aspekts/viva/pull/8) | **SAFE TO MERGE** | No blocking finding. Adversarial probes refused traversal, absolute paths, unchanged files, wildcard/pathspec requests, encoded traversal, symlinks and submodules. Changed filenames beginning `--` or containing pathspec syntax were treated literally. Foreign hosts and loopback-looking foreign domains returned 403. Source comes from Git blobs; size limits and data boundaries match the body. |
+| [#35](https://github.com/aspekts/viva/pull/35) | **MERGE AFTER FIXES** | **P2: SSE disconnect leak**, detailed below. Normal disconnect cleanup, polling fallback, reconnect refresh and topic filtering work. The fog timer’s in-flight guard prevents overlapping timer ticks. Permanent polling after an HTTP stream failure is accurately disclosed. |
+| [#37](https://github.com/aspekts/viva/pull/37) | **SAFE TO MERGE**, after dependencies | No independent blocker. Latest-repo selection, explicit override, empty state, deleted-repo handling and repo-switch notification match the body. Non-blocking: any fog-computation error forgets the remembered repo, including transient errors, rather than only deletion/movement. |
+| [#38](https://github.com/aspekts/viva/pull/38) | **MERGE AFTER FIXES** | **P2: overlapping initial loads defeat review pinning**, detailed below. Mock fallback removal and repeat-push ordering are correct. The body’s claim that questions cannot switch mid-exam is currently false. |
+| [#39](https://github.com/aspekts/viva/pull/39) | **SAFE TO MERGE**, after dependencies | No independent blocker. Hard-gate refusal remains enforced before skip; the mutation guard prevents concurrent answer/skip changes. Pending and failed exams remain skippable; allowed pushes return 409 without overwriting receipts. Client status errors and fixtures match the body. |
+
+Blocking findings, ranked:
+
+1. **P2 — #35: leaked SSE listener and timer on early disconnect.**  
+   `apps/vivad/src/app.ts:214–215` awaits the initial write **before** registering `onAbort`. If cancellation happens during that write, Hono records the abort but does not invoke subsequently registered callbacks. The handler waits forever, retaining its listener and fog timer. A throwaway probe cancelled ten responses immediately: **zero of ten timers were cleared**.  
+   **Fix:** register abort handling before the first await, handle an already-aborted stream, and put listener/timer cleanup in `finally`. Add an immediate-disconnect regression test.
+
+2. **P2 — #38: initial fetch and SSE refresh can replace a pinned review.**  
+   `apps/web/src/exam/ExamRoom.tsx:15–17` allows multiple `getLatestReview()` requests before `id` is assigned. A delayed older response can overwrite a newer response after its questions are displayed. Running the exact effect body with controlled promises displayed **`newest-B`, then `older-A`**. This can replace questions while answers are being typed.  
+   **Fix:** serialize initial selection or reject obsolete responses, then fetch only the pinned ID. Add an out-of-order-response regression test.
+
+Validation: `pnpm install` succeeded. On exact stack head `01eba06`, the final `env -u VIVA_LLM -u GEMINI_API_KEY pnpm check` **passed: typecheck, 116 tests, 6/6 mock evals**. The first run failed the existing terminal-exam question-advance test; it passed both in isolation and on the full rerun. No keys or live model calls were used.
+
+Trial merges from `queue/5-skip`:
+
+- **#40:** conflict only in `apps/web/src/fog/FogView.tsx`, in imports. Combine its treemap imports with `watch`; retain the stack’s live-loading effect and `repoPath: null` state.
+- **#41:** conflicts in `apps/web/src/api/client.ts` and `apps/web/src/exam/ExamRoom.tsx`. Preserve the stack’s APIs and mock variants, plus #41’s grading/error UI. Unify `ApiError`: the two implementations use opposite constructor argument orders and different class locations. Also reconcile lifecycle semantics: #41 keeps tabs mounted, so leaving and returning will no longer select a newer review as #38 promises.
+
+Both merges were aborted, the scratch branch and probes removed, and the original branch restored clean. No GitHub writes were made.
