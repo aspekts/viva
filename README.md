@@ -46,6 +46,8 @@ pnpm viva feedback <reviewId> --agent codex
 
 Feedback prints the question, code location and missed concepts for pasting into a coding agent. The optional flag explicitly sends it on stdin to `claude -p` or `codex exec -`; an agent is never invoked automatically. Feedback and pending questions are memory-only: after a daemon restart, retry the push to refresh its review. Completed gate decisions survive, but detailed feedback expires.
 
+After a passed exam you can choose to save your explanation as project memory: press `m` in the terminal exam or run `pnpm viva remember <reviewId>`. Viva appends it to `.viva/memory/<file>.md` in your working tree and prints exactly what it wrote. Nothing is shared until you commit that file, and deleting it forgets it. Nothing is saved unless you ask, only passed answers are kept, and the explanation never enters the ledger.
+
 The hook reads answers from the controlling console (`/dev/tty` on macOS/Linux, `CONIN$` on Windows), leaving Git's ref-data stdin untouched. If the console cannot be opened or used in raw mode, it falls back to the browser link. Terminal flow has been exercised through a macOS PTY; Windows console behaviour still needs hands-on verification. For offline development, set `VIVA_LLM=mock` in `.env`.
 
 ## Commands
@@ -55,6 +57,8 @@ The hook reads answers from the controlling console (`/dev/tty` on macOS/Linux, 
 | `pnpm dev` | Runs the daemon and web UI |
 | `pnpm viva exam <reviewId>` | Opens an existing exam or verdict in the terminal |
 | `pnpm viva feedback <reviewId> [--agent claude\|codex]` | Prints missed concepts; optionally hands them to the named agent |
+| `pnpm viva remember <reviewId>` | After a pass, saves your answers as project memory in `.viva/memory/` (also `m` in the terminal exam) |
+| `pnpm viva memory <file>` | Prints the saved reasoning for a file, for people and agents. Needs no daemon |
 | `pnpm test` | Runs unit and integration tests |
 | `pnpm evals` | Runs the eval matrix |
 | `pnpm check` | Runs typecheck, tests and evals. Run this before opening a PR |

@@ -53,6 +53,18 @@ The daemon deduplicates reviews by a SHA-256 identity of canonical repository pa
 
 `GET /v1/reviews` lists reviews newest first, and a repeat push of a decided change moves it to the front. The UI opens the first one when the URL has no review ID.
 
+## Decision memory
+
+After a passed exam the developer can choose to save their answers as project memory, with `m` in the terminal exam, `pnpm viva remember <reviewId>`, or `POST /v1/reviews/:id/memory` from the UI. It is never automatic. The daemon holds a passed exam's answers in memory only until then, so a restart forgets them (410). Only passed answers about files the push changed are kept.
+
+Memory is plain markdown, committed with the code: `.viva/memory/<path>.md` for the source file `<path>`, holding one section per decision with the claim, the question and the developer's explanation, plus a machine-readable comment with the location, person, date and commit. We chose this over a second notes ref because:
+
+- Agents read files. An agent changing `src/pay.ts` finds `.viva/memory/src/pay.ts.md` by path or by grep, with no Viva tooling. `pnpm viva memory <file>` prints it as untrusted data.
+- It travels with the repo in normal pushes, unlike notes refs, which must be pushed explicitly. It also goes through code review like any change, and Entire captures it with the commit.
+- The developer sees what's stored: the save prints it, `git diff` shows it, and nothing leaves the machine until they commit.
+
+It is separate from the ledger, which still holds only scores and hashes. `.viva/memory/` is not a protected path, so saving memory doesn't trip `viva-config-changed`, and a push that also touches `.viva/config.json` or `.viva/checks/` is still a hard gate. Missing or damaged memory reads as empty, and a failed save never changes a verdict.
+
 ## Design rules
 
 - **Fail open.** If the daemon is down, the push goes through with a warning. Reliability beats coverage, as in HRT's Blobby talk.

@@ -1,13 +1,14 @@
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Review } from "@viva/contracts";
-import { allowsPush } from "@viva/engine";
+import { allowsPush, readMemory } from "@viva/engine";
 import open from "open";
 import { ApiError, DaemonClient } from "./client.js";
 import { runExam } from "./exam.js";
 import { formatFeedback, handToAgent } from "./feedback.js";
+import { formatMemory, formatSaved, repoRelative } from "./memory.js";
 import { controllingTerminal, pushContext } from "./terminal.js";
 
 const WEB = process.env.VIVA_WEB ?? "http://localhost:5173";
@@ -128,7 +129,19 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
     console.log(text);
     return agent === "claude" || agent === "codex" ? handToAgent(agent, text, REPO) : 0;
   }
-  console.log("usage: viva gate | viva hook install | viva exam <reviewId> | viva feedback <reviewId> [--agent claude|codex]");
+  if (command === "remember" && sub && args.length === 2) {
+    console.log(formatSaved(await new DaemonClient().saveMemory(sub)));
+    return 0;
+  }
+  if (command === "memory" && sub && args.length === 2) {
+    // Reads the files directly, so it works without the daemon, for people and agents alike.
+    // Git reports real paths, so resolve symlinks such as macOS's /var -> /private/var first.
+    const root = realpathSync(git("rev-parse", "--show-toplevel"));
+    const file = repoRelative(root, realpathSync(REPO), sub);
+    console.log(formatMemory(file, await readMemory(root, file)));
+    return 0;
+  }
+  console.log("usage: viva gate | viva hook install | viva exam <reviewId> | viva feedback <reviewId> [--agent claude|codex] | viva remember <reviewId> | viva memory <file>");
   return command ? 1 : 0;
 }
 

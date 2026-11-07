@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import { Answer, FogMap, ReviewCode, ReviewFeedback, ReviewRequest, VivaEvent, type Review } from "@viva/contracts";
+import { Answer, FogMap, ReviewCode, ReviewFeedback, ReviewRequest, SavedMemory, VivaEvent, type Review } from "@viva/contracts";
 import {
   allowsPush,
   appendAttestations,
@@ -14,6 +14,7 @@ import {
   MockProvider,
   readLedger,
   readReviewFile,
+  saveMemory,
   skipWithDebt,
   startReview,
   submitAnswers,
@@ -50,6 +51,11 @@ export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 200
   const reviews = new Map<string, Review>();
   const byKey = new Map<string, Promise<Review>>();
   const changing = new Set<string>();
+  /**
+   * Answers of passed exams, held in memory only until the developer chooses
+   * whether to save them as project memory. Never logged or written elsewhere.
+   */
+  const passedAnswers = new Map<string, Answer[]>();
   const app = new Hono();
 
   const listeners = new Set<(event: VivaEvent) => void>();
@@ -132,6 +138,7 @@ export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 200
     try {
       const { review, attestations } = await submitAnswers(current, answers, { llm });
       await appendAttestations(review.request.repoPath, review.request.head, attestations);
+      if (review.gate && allowsPush(review.gate)) passedAnswers.set(review.id, answers);
       await writeDecision(review);
       await record(review);
       return c.json(review);
@@ -157,6 +164,16 @@ export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 200
     } finally {
       changing.delete(current.id);
     }
+  });
+
+  /** Explicit opt-in: saves the passed answers as markdown under .viva/memory/ for the developer to commit. */
+  app.post("/v1/reviews/:id/memory", async (c) => {
+    const review = reviews.get(c.req.param("id"));
+    if (!review) return c.json({ error: "review not found; retry git push after a daemon restart" }, 404);
+    if (review.gate?.reason !== "exam-passed") return c.json({ error: "only a passed exam can be saved as memory" }, 409);
+    const answers = passedAnswers.get(review.id);
+    if (!answers) return c.json({ error: "the explanation expired on daemon restart; nothing was saved" }, 410);
+    return c.json(SavedMemory.parse(await saveMemory(review, answers)));
   });
 
   app.get("/v1/reviews/:id/feedback", (c) => {

@@ -151,3 +151,23 @@ describe("skipReview", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 });
+
+describe("saveMemory", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("posts the opt-in save and returns what was written", async () => {
+    const saved = (await import("../../../../fixtures/mock/memory.json")).default;
+    const fetch = vi.fn(async () => new Response(JSON.stringify(saved)));
+    vi.stubGlobal("fetch", fetch);
+    const { saveMemory } = await client("");
+    expect((await saveMemory("a/b")).files).toEqual([".viva/memory/src/webhook.ts.md"]);
+    expect(fetch).toHaveBeenCalledWith("/v1/reviews/a%2Fb/memory", { method: "POST" });
+  });
+
+  it("returns sample memory in mock mode without a daemon", async () => {
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+    expect((await (await client("?mock")).saveMemory("mock-review")).entries[0]?.claim).toMatch(/idempotency/);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+});
