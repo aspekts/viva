@@ -21,7 +21,6 @@ Marcus starts each run, as nothing picks this up automatically. Agents work top 
 
 | Request | Why | Done when | From |
 |---|---|---|---|
-| `skipReview(id)` in `client.ts` | Skip button | Skip works, and is refused on hard gates | Contract gaps |
 
 ## Done
 
@@ -31,3 +30,4 @@ Marcus starts each run, as nothing picks this up automatically. Agents work top 
 | Live events for reviews and fog | [PR #35](https://github.com/aspekts/viva/pull/35), awaiting review, not merged. Stacked on PR #8. Shows a review once it's created or decided, but not its progress while it runs. Polling continues as the fallback |
 | Tell the Fog which repo to map | [PR #37](https://github.com/aspekts/viva/pull/37), awaiting review, not merged. Stacked on PR #35. Remembered in memory only, so after a daemon restart the map is empty until the next push |
 | Latest review for the Exam room tab | [PR #38](https://github.com/aspekts/viva/pull/38), awaiting review, not merged. Stacked on PR #37. Also fixes the exam showing mock data outside `?mock` |
+| `skipReview(id)` in `client.ts` | [PR #39](https://github.com/aspekts/viva/pull/39), awaiting review, not merged. Stacked on PR #38. No skip button: the exam screens are Sophina's. The daemon also now refuses to skip a push that's already allowed |

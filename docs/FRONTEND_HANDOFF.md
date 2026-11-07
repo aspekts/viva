@@ -2,7 +2,7 @@
 
 Your starting point, kept up to date as work lands. For exact API details, see [the app contract](APP_CONTRACT.md).
 
-**Last updated:** Saturday 7 November, 21:42
+**Last updated:** Saturday 7 November, 21:43
 
 ## Start here
 
@@ -79,7 +79,7 @@ Agents are working on these, and nothing merges without Marcus reviewing it.
 | Live events | Fog rolling in live | [PR #35](https://github.com/aspekts/viva/pull/35), awaiting review. Use `watch("fog", reload)`, which polls by itself until events connect |
 | Fog knows which repo to map | Live Fog | [PR #37](https://github.com/aspekts/viva/pull/37), awaiting review. Shows the last pushed repo. Use `?mock&empty` for the empty state |
 | Latest review | Opening the exam tab directly | [PR #38](https://github.com/aspekts/viva/pull/38), awaiting review. `getLatestReview()` returns the newest or `null`. Use `?mock&empty` for the empty state |
-| `skipReview(id)` | Skip button | Queued |
+| `skipReview(id)` | Skip button | [PR #39](https://github.com/aspekts/viva/pull/39), awaiting review. Use `?mock&hard` for a hard gate, where skip is refused with a 409 |
 
 Build these against mock data and the shapes proposed in the contract. If a final shape differs, the change should be small.
 
@@ -115,6 +115,7 @@ Newest first. Add a line when something changes what the frontend can rely on.
 
 | When | What changed |
 |---|---|
+| Sat 21:43 | [PR #39](https://github.com/aspekts/viva/pull/39) open, not merged: `skipReview(id)` in `client.ts`. Errors from `client.ts` are now an `ApiError` with a `status`, and a refused skip is a 409. `?mock&hard` loads a hard-gate review. Sophina, the skip button is yours to add |
 | Sat 21:42 | [PR #38](https://github.com/aspekts/viva/pull/38) open, not merged: with no ID in the URL, the Exam room opens the newest review and stays on it, or shows an empty state. `getReview(id)` now needs an ID and no longer returns sample data outside `?mock`. Sophina, design the empty state, and see it with `?mock&empty` |
 | Sat 21:40 | [PR #37](https://github.com/aspekts/viva/pull/37) open, not merged: the Fog maps the most recently pushed repo. `FogMap.repoPath` is null with no nodes until a push, so Kay, design that empty state, and see it with `?mock&empty`. A daemon restart forgets the repo |
 | Sat 21:37 | [PR #35](https://github.com/aspekts/viva/pull/35) open, not merged: `watch(topic, refresh)` in `client.ts` calls you back when the fog or a review changes, including when an agent commits. `FogView` and `ExamRoom` already call it. It doesn't show progress while a review runs |
