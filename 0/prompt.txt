@@ -1,0 +1,23 @@
+First read /tmp/htb/brief_common.md and follow it exactly.
+
+TASK: tune Viva's checks and exam questions against real results, on top of the eval work happening in parallel.
+
+Dependency: another agent is building the live eval matrix on branch evals/live-matrix. Wait for its PR. Run `gh pr list --repo aspekts/viva --head evals/live-matrix`, re-checking every few minutes using a Monitor or background wait, for up to 2 hours. When it exists and docs/EVALS.md is committed there, run `git fetch origin` then `git reset --hard origin/evals/live-matrix` on your branch, as you have no work of your own yet. If it hasn't appeared after 2 hours, stop and report that plainly rather than duplicating the work.
+
+Then:
+1. Read docs/EVALS.md, and work on the failures. Priorities in order: stop false positives on clean changes, because low-value findings drown out real ones and interrupt developers; raise recall on subtle silent changes; make `silent` versus `requested` classification reliable.
+2. Tune checks/*.md, and the question planner in packages/engine/src/pipeline/plan.ts. Questions must ask what happens or why, be answerable in a sentence or two out loud, and have rubrics a transcript can be graded against. Keep one question per check. Prefer a precheck or deterministic fix over a longer prompt. Do not hardcode anything that matches eval cases, and don't weaken or delete cases to raise the score.
+3. Test whether `gemini-3.5-flash-lite` is good enough. If it clearly misses things that `gemini-3.5-flash` catches, measure that and recommend, but don't change the default on one run. Note latency matters: a review currently takes about 3.4 seconds.
+4. Hold out a few cases: tune on most, then report the score on cases you didn't tune against, so the result isn't overfit. Record before and after numbers, latency and tokens in docs/EVALS.md.
+
+Open the PR with base branch evals/live-matrix, so it's stacked and reviewable. You are on branch tuning/silent-decision. End commits with: Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>.
+
+---
+
+<task-notification>
+<task-id>bn5d1awil</task-id>
+<tool-use-id>toolu_01Fdq5i4eYNzCFquQd5uv16k</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-marcus--t3-worktrees-viva-tuning-silent-decision/2a6b63c6-731f-4ddd-982c-c5c8172538b1/tasks/bn5d1awil.output</output-file>
+<status>completed</status>
+<summary>Background command "Poll for the eval PR and EVALS.md for up to 2 hours" completed (exit code 0)</summary>
+</task-notification>
