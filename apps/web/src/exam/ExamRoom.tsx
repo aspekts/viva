@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Answer, Review } from "@viva/contracts";
-import { getLatestReview, getReview, submitAnswers, watch } from "../api/client";
+import { reviewLoader, submitAnswers, watch } from "../api/client";
 import { QuestionCode } from "./QuestionCode";
 
 /** Typed exam first. Sophina adds the ElevenLabs voice session behind the same answers. */
@@ -11,15 +11,17 @@ export function ExamRoom({ reviewId }: { reviewId: string | null }) {
   const [empty, setEmpty] = useState(false);
 
   useEffect(() => {
-    // With no ID, open the newest review, then stay on it so a later push can't swap the questions mid-exam.
-    let id = reviewId;
-    const load = () => (id ? getReview(id) : getLatestReview()).then((loaded) => {
-      if (loaded) { id = loaded.id; setReview(loaded); }
+    const loader = reviewLoader(reviewId, (loaded) => {
+      if (loaded) setReview(loaded);
       setEmpty(!loaded);
       setError(null);
-    }, (e: Error) => setError(e.message));
-    load();
-    return watch("review", load);
+    }, (e) => setError(e.message));
+    loader.load();
+    const stopWatching = watch("review", loader.load);
+    return () => {
+      stopWatching();
+      loader.stop();
+    };
   }, [reviewId]);
 
   if (error) return <p role="alert">Could not load this review: {error}</p>;

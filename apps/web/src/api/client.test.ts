@@ -121,3 +121,59 @@ describe("reviews", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 });
+
+describe("reviewLoader", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  /** A daemon whose responses arrive only when the test releases them, in any order. */
+  function slowDaemon() {
+    const pending: ((body: unknown) => void)[] = [];
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((resolve) => {
+      pending.push((body) => resolve(new Response(JSON.stringify(body))));
+    })));
+    return pending;
+  }
+  const review = async (id: string) => ({ ...JSON.parse(JSON.stringify((await import("../../../../fixtures/mock/review.json")).default)), id });
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it("ignores an older answer that arrives after a newer one", async () => {
+    const pending = slowDaemon();
+    const { reviewLoader } = await client("");
+    const shown: (string | null)[] = [];
+    const loader = reviewLoader(null, (r) => shown.push(r?.id ?? null), () => {});
+    loader.load();
+    loader.load();
+    pending[1]!([await review("newest-B")]);
+    await settle();
+    pending[0]!([await review("older-A")]);
+    await settle();
+    expect(shown).toEqual(["newest-B"]);
+  });
+
+  it("stays on the opened review when a newer one is pushed", async () => {
+    const pending = slowDaemon();
+    const { reviewLoader } = await client("");
+    const shown: (string | null)[] = [];
+    const loader = reviewLoader(null, (r) => shown.push(r?.id ?? null), () => {});
+    loader.load();
+    pending[0]!([await review("first")]);
+    await settle();
+    loader.load();
+    expect(fetch).toHaveBeenLastCalledWith("/v1/reviews/first", undefined);
+    pending[1]!(await review("first"));
+    await settle();
+    expect(shown).toEqual(["first", "first"]);
+  });
+
+  it("reports nothing after it stops", async () => {
+    const pending = slowDaemon();
+    const { reviewLoader } = await client("");
+    const onLoad = vi.fn();
+    const loader = reviewLoader(null, onLoad, () => {});
+    loader.load();
+    loader.stop();
+    pending[0]!([await review("late")]);
+    await settle();
+    expect(onLoad).not.toHaveBeenCalled();
+  });
+});

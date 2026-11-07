@@ -62,6 +62,33 @@ export async function getLatestReview(): Promise<Review | null> {
   return Review.array().parse(await json("/v1/reviews"))[0] ?? null;
 }
 
+/**
+ * Loads one review for the exam: the given ID, or else the newest, which it then
+ * stays on so a later push can't swap the questions mid-exam. Answers that arrive
+ * out of order, or for another review once one is open, are ignored.
+ */
+export function reviewLoader(
+  reviewId: string | null,
+  onLoad: (review: Review | null) => void,
+  onError: (error: Error) => void,
+) {
+  let id = reviewId;
+  let latest = 0;
+  let stopped = false;
+  const load = () => {
+    const call = ++latest;
+    (id ? getReview(id) : getLatestReview()).then(
+      (loaded) => {
+        if (stopped || call !== latest || (id && loaded?.id !== id)) return;
+        if (loaded) id = loaded.id;
+        onLoad(loaded);
+      },
+      (error: Error) => { if (!stopped && call === latest) onError(error); },
+    );
+  };
+  return { load, stop: () => { stopped = true; } };
+}
+
 /** Mock mode has one snippet, so it returns that for any location. */
 export async function getReviewCode(id: string, { file, lines: [start, end] }: CodeLocation): Promise<ReviewCode> {
   if (MOCK) return ReviewCode.parse(mockCode);
