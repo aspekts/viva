@@ -1,4 +1,5 @@
-import { FogMap, Review, type Answer } from "@viva/contracts";
+import { FogMap, Review, ReviewCode, VivaEvent, type Answer, type CodeLocation } from "@viva/contracts";
+import mockCode from "../../../../fixtures/mock/code.json";
 import mockFog from "../../../../fixtures/mock/fog.json";
 import mockReview from "../../../../fixtures/mock/review.json";
 
@@ -11,6 +12,36 @@ async function json(path: string, init?: RequestInit): Promise<unknown> {
   return response.json();
 }
 
+const POLL_MS = 2000;
+
+/**
+ * Calls refresh whenever the fog or a review changes, and returns a function to
+ * stop. It listens to live events, and polls for as long as they're unavailable.
+ */
+export function watch(topic: VivaEvent["type"], refresh: () => void): () => void {
+  if (MOCK) return () => {};
+  let poll: ReturnType<typeof setInterval> | undefined;
+  const startPolling = () => { poll ??= setInterval(refresh, POLL_MS); };
+  const stopPolling = () => { clearInterval(poll); poll = undefined; };
+
+  startPolling();
+  if (typeof EventSource === "undefined") return stopPolling;
+  const events = new EventSource("/v1/events");
+  events.onopen = () => {
+    stopPolling();
+    // Nothing is replayed, so catch up on whatever changed while disconnected.
+    refresh();
+  };
+  events.onerror = startPolling;
+  events.onmessage = ({ data }) => {
+    if (VivaEvent.parse(JSON.parse(data)).type === topic) refresh();
+  };
+  return () => {
+    events.close();
+    stopPolling();
+  };
+}
+
 export async function getFog(): Promise<FogMap> {
   return FogMap.parse(MOCK ? mockFog : await json("/v1/fog"));
 }
@@ -18,6 +49,13 @@ export async function getFog(): Promise<FogMap> {
 export async function getReview(id: string | null): Promise<Review> {
   if (MOCK || !id) return Review.parse(mockReview);
   return Review.parse(await json(`/v1/reviews/${id}`));
+}
+
+/** Mock mode has one snippet, so it returns that for any location. */
+export async function getReviewCode(id: string, { file, lines: [start, end] }: CodeLocation): Promise<ReviewCode> {
+  if (MOCK) return ReviewCode.parse(mockCode);
+  const query = new URLSearchParams({ file, start: String(start), end: String(end) });
+  return ReviewCode.parse(await json(`/v1/reviews/${encodeURIComponent(id)}/code?${query}`));
 }
 
 export async function submitAnswers(id: string, answers: Answer[]): Promise<Review> {

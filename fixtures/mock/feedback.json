@@ -1,0 +1,10 @@
+{
+  "reviewId": "demo-review",
+  "gate": { "verdict": "reject", "reason": "exam-failed", "skippable": true },
+  "items": [{
+    "questionId": "q1",
+    "location": { "file": "src/pay.ts", "lines": [2, 4] },
+    "ask": "What happens if the charge is retried?",
+    "missing": ["idempotency"]
+  }]
+}

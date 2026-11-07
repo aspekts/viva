@@ -2,14 +2,15 @@ import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Review } from "@viva/contracts";
+import type { Review } from "@viva/contracts";
 import { allowsPush } from "@viva/engine";
+import open from "open";
+import { ApiError, DaemonClient } from "./client.js";
+import { runExam } from "./exam.js";
+import { formatFeedback, handToAgent } from "./feedback.js";
+import { controllingTerminal, pushContext } from "./terminal.js";
 
-const PORT = process.env.VIVA_PORT ?? "4317";
-const API = `http://127.0.0.1:${PORT}/v1`;
 const WEB = process.env.VIVA_WEB ?? "http://localhost:5173";
-const POLL_MS = 1000;
-const EXAM_TIMEOUT_MS = 10 * 60 * 1000;
 const MARKER = "# viva gate";
 
 const VIVA_ROOT = resolve(fileURLToPath(new URL("../../..", import.meta.url))).replaceAll("\\", "/");
@@ -29,44 +30,75 @@ function pushBase(): string {
   return "HEAD~1";
 }
 
-async function gate(): Promise<number> {
-  const request = {
-    repoPath: git("rev-parse", "--show-toplevel"),
-    base: pushBase(),
-    head: git("rev-parse", "HEAD"),
-    person: git("config", "user.name"),
-  };
-
-  let review: Review;
-  try {
-    const response = await fetch(`${API}/reviews`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(request),
-    });
-    if (!response.ok) throw new Error(`vivad returned ${response.status}`);
-    review = Review.parse(await response.json());
-  } catch (error) {
-    // Fail open: a broken or absent daemon must never stop a push.
-    console.warn(`viva: skipped, daemon unavailable (${(error as Error).message})`);
-    return 0;
-  }
-
+export async function presentReview(review: Review, client: DaemonClient): Promise<number> {
+  const context = pushContext(process.env, !!(process.stderr.isTTY || process.stdout.isTTY));
   if (review.stage === "awaiting-exam") {
-    console.log(`viva: this push needs a viva: ${WEB}/?review=${review.id}`);
-    const deadline = Date.now() + EXAM_TIMEOUT_MS;
-    while (review.stage !== "done" && Date.now() < deadline) {
-      await new Promise((resolve) => setTimeout(resolve, POLL_MS));
-      review = Review.parse(await (await fetch(`${API}/reviews/${review.id}`)).json());
+    const input = context.terminal ? controllingTerminal() : null;
+    if (input) {
+      const output = process.stderr.isTTY ? process.stderr : process.stdout;
+      const completed = await runExam(review, client, input, output);
+      if (!completed) {
+        console.error(`viva: exam left unfinished; push blocked. Run pnpm viva exam ${review.id}, then git push again.`);
+        return 1;
+      }
+      review = completed;
+    } else {
+      const link = `${WEB}/?review=${encodeURIComponent(review.id)}`;
+      console.error(`viva: exam required; push blocked. Complete ${link} or run pnpm viva exam ${review.id} in a terminal, then git push again.`);
+      if (context.openBrowser) {
+        try { await open(link, { wait: false }); } catch { /* The printed link remains usable. */ }
+      }
+      return 1;
     }
   }
-
   if (!review.gate) {
-    console.error("viva: exam timed out, push blocked");
+    console.error("viva: review is incomplete; retry git push");
     return 1;
   }
   console.log(`viva: ${review.gate.verdict} (${review.gate.reason})`);
+  if (!allowsPush(review.gate)) {
+    console.error(`viva: push blocked. Run pnpm viva feedback ${review.id} for missed concepts.${review.gate.skippable ? ` Run pnpm viva exam ${review.id} to review the verdict or skip with debt.` : " Hard gate: resolve the flagged change; this cannot be skipped."}`);
+  }
   return allowsPush(review.gate) ? 0 : 1;
+}
+
+export async function gate(client = new DaemonClient()): Promise<number> {
+  let review: Review;
+  try {
+    const request = {
+      repoPath: git("rev-parse", "--show-toplevel"),
+      base: pushBase(),
+      head: git("rev-parse", "HEAD"),
+      person: git("config", "user.name"),
+    };
+
+    review = await client.start(request);
+  } catch {
+    // Preserve the hook's fail-open policy for every review-creation failure.
+    console.warn("viva: skipped, daemon unavailable or review infrastructure failed");
+    return 0;
+  }
+  try {
+    return await presentReview(review, client);
+  } catch (error) {
+    if (error instanceof ApiError && error.status < 500) {
+      console.error(`viva: push blocked (${error.message}); retry git push to refresh the review`);
+      return 1;
+    }
+    // Fail open: a broken or absent daemon must never stop a push.
+    console.warn("viva: skipped, daemon unavailable or review infrastructure failed");
+    return 0;
+  }
+}
+
+async function exam(id: string): Promise<number> {
+  const client = new DaemonClient();
+  const review = await client.review(id);
+  const context = pushContext(process.env, !!(process.stderr.isTTY || process.stdout.isTTY));
+  const input = context.terminal ? controllingTerminal() : null;
+  if (!input) return presentReview(review, client);
+  const completed = await runExam(review, client, input, process.stderr.isTTY ? process.stderr : process.stdout);
+  return completed ? presentReview(completed, client) : 1;
 }
 
 /** Appends to the hook, as core.hooksPath would bypass Entire's hooks. */
@@ -83,8 +115,24 @@ function installHook(): number {
   return 0;
 }
 
-const [command, sub] = process.argv.slice(2);
-if (command === "gate") process.exit(await gate());
-if (command === "hook" && sub === "install") process.exit(installHook());
-console.log("usage: viva gate | viva hook install");
-process.exit(command ? 1 : 0);
+export async function main(args = process.argv.slice(2)): Promise<number> {
+  const [command, sub, flag, agent] = args;
+  if (command === "gate") return gate();
+  if (command === "hook" && sub === "install") return installHook();
+  if (command === "exam" && sub) return exam(sub);
+  if (command === "feedback" && sub) {
+    if ((flag && flag !== "--agent") || (flag === "--agent" && agent !== "claude" && agent !== "codex") || args.length > 4) {
+      throw new Error("usage: viva feedback <reviewId> [--agent claude|codex]");
+    }
+    const text = formatFeedback(await new DaemonClient().feedback(sub));
+    console.log(text);
+    return agent === "claude" || agent === "codex" ? handToAgent(agent, text, REPO) : 0;
+  }
+  console.log("usage: viva gate | viva hook install | viva exam <reviewId> | viva feedback <reviewId> [--agent claude|codex]");
+  return command ? 1 : 0;
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  try { process.exitCode = await main(); }
+  catch (error) { console.error(`viva: ${(error as Error).message}`); process.exitCode = 1; }
+}
