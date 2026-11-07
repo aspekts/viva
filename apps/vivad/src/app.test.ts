@@ -5,11 +5,14 @@ import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { Review, ReviewCode, ReviewFeedback, VivaEvent } from "@viva/contracts";
 import { fixtureRepo, MockProvider, type LlmProvider } from "@viva/engine";
+import * as engine from "@viva/engine";
+import * as decisions from "./decisions.js";
 import { createApp } from "./app.js";
 
 const repos: string[] = [];
 // Retries without blocking, as Windows locks a repo while a fog check's git process runs in it.
 afterEach(async () => {
+  vi.restoreAllMocks();
   await Promise.all(repos.splice(0).map((repo) => rm(repo, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 })));
 });
 
@@ -92,6 +95,59 @@ describe("vivad", () => {
       post(app, `/v1/reviews/${review.id}/answers`, payload),
     ]);
     expect(results.map((r) => r.status).sort()).toEqual([200, 409]);
+  });
+
+  it("does not append attestations when the receipt write fails, then retries once", async () => {
+    const app = createApp(new MockProvider());
+    const request = fixture();
+    const review = await start(app, request);
+    const dir = join(request.repoPath, ".git", "viva-decisions");
+    writeFileSync(dir, "block receipt directory creation");
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const payload = review.plan!.questions.map((q) => ({ questionId: q.id, mode: "typed", transcript: "behaviour" }));
+    expect((await post(app, `/v1/reviews/${review.id}/answers`, payload)).status).toBe(500);
+    expect(await engine.readLedger(request.repoPath)).toEqual([]);
+    expect((await start(app, request)).stage).toBe("awaiting-exam");
+    rmSync(dir);
+    const completed = await answer(app, review, "behaviour");
+    const ledger = await engine.readLedger(request.repoPath);
+    expect(ledger).toHaveLength(review.plan!.questions.length);
+    expect((await post(app, `/v1/reviews/${review.id}/answers`, payload)).status).toBe(409);
+    expect(await engine.readLedger(request.repoPath)).toEqual(ledger);
+    expect((await start(createApp(new MockProvider()), request)).gate).toEqual(completed.gate);
+    log.mockRestore();
+  });
+
+  it("retains a durable decision and never replays the ledger after an append failure", async () => {
+    const app = createApp(new MockProvider());
+    const request = fixture();
+    const review = await start(app, request);
+    const append = vi.spyOn(engine, "appendAttestations").mockRejectedValue(new Error("ledger unavailable"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const payload = review.plan!.questions.map((q) => ({ questionId: q.id, mode: "typed", transcript: "no idea" }));
+    expect((await post(app, `/v1/reviews/${review.id}/answers`, payload)).status).toBe(500);
+    expect((await start(app, request)).gate?.reason).toBe("exam-failed");
+    expect((await post(app, `/v1/reviews/${review.id}/answers`, payload)).status).toBe(409);
+    expect((await start(createApp(new MockProvider()), request)).gate?.reason).toBe("exam-failed");
+    expect(append).toHaveBeenCalledTimes(1);
+  });
+
+  it("describes in-progress submissions accurately for both answers and skip", async () => {
+    const app = createApp(new MockProvider());
+    const review = await start(app, fixture());
+    const write = decisions.writeDecision;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const receipt = vi.spyOn(decisions, "writeDecision").mockImplementation(async (review) => { await held; await write(review); });
+    const submission = answer(app, review, "behaviour");
+    try {
+      await vi.waitFor(() => expect(receipt).toHaveBeenCalled());
+      for (const action of ["answers", "skip"]) {
+        const response = await post(app, `/v1/reviews/${review.id}/${action}`, action === "answers" ? [] : {});
+        expect(response.status).toBe(409);
+        expect(await response.json()).toEqual({ error: "review submission is already in progress" });
+      }
+    } finally { release(); await submission; }
   });
 
   it("persists explicit skip-with-debt without recording mastery", async () => {

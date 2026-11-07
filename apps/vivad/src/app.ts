@@ -114,14 +114,19 @@ export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 200
     const answers = z.array(Answer).parse(await c.req.json());
     const current = reviews.get(c.req.param("id"));
     if (!current) return c.json({ error: "not found" }, 404);
-    if (current.stage !== "awaiting-exam" || changing.has(current.id)) {
+    if (changing.has(current.id)) return c.json({ error: "review submission is already in progress" }, 409);
+    if (current.stage !== "awaiting-exam") {
       return c.json({ error: "review is not awaiting an exam" }, 409);
     }
     changing.add(current.id);
     try {
       const { review, attestations } = await submitAnswers(current, answers, { llm });
-      await appendAttestations(review.request.repoPath, review.request.head, attestations);
+      // Persist the gate before touching the ledger. A failed receipt write is
+      // retryable without duplicate attestations. Once durable, mark completion
+      // before appending so even a ledger failure cannot replay this submission.
       await writeDecision(review);
+      reviews.set(review.id, review);
+      await appendAttestations(review.request.repoPath, review.request.head, attestations);
       await record(review);
       return c.json(review);
     } finally {
@@ -132,7 +137,8 @@ export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 200
   app.post("/v1/reviews/:id/skip", async (c) => {
     const current = reviews.get(c.req.param("id"));
     if (!current) return c.json({ error: "not found" }, 404);
-    if (current.gate?.skippable === false || changing.has(current.id)) {
+    if (changing.has(current.id)) return c.json({ error: "review submission is already in progress" }, 409);
+    if (current.gate?.skippable === false) {
       return c.json({ error: "this gate cannot be skipped" }, 409);
     }
     const review = skipWithDebt(current);
