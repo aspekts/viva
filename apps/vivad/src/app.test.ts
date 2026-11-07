@@ -342,6 +342,17 @@ describe("vivad", () => {
       await new Promise((resolve) => setTimeout(resolve, 200));
     });
 
+    it("tells the Fog to refetch when a push switches back to an unchanged repo", async () => {
+      const app = createApp(new MockProvider());
+      const first = fixture();
+      await answer(app, await start(app, first), "behaviour");
+      await start(app, fixture());
+      const events = await listen(app);
+      const again = await start(app, first);
+      expect(await events.until((e) => e.type === "fog")).toEqual({ type: "fog", repoPath: again.request.repoPath });
+      await events.close();
+    });
+
     it("stays quiet when a repo hasn't changed", async () => {
       const clear = vi.spyOn(globalThis, "clearInterval");
       const app = createApp(new MockProvider(), { fogPollMs: 20 });

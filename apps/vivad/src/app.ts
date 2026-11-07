@@ -102,7 +102,11 @@ export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 200
     }
     const initial = await pending;
     const review = reviews.get(initial.id) ?? initial;
-    latestRepo = review.request.repoPath;
+    if (latestRepo !== review.request.repoPath) {
+      latestRepo = review.request.repoPath;
+      // The Fog now maps another repo, even if neither repo itself changed.
+      publish({ type: "fog", repoPath: latestRepo });
+    }
     return c.json(review);
   });
 
