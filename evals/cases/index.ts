@@ -12,12 +12,19 @@ export interface ExpectedClaim {
   checks: CheckName[];
 }
 
+/** Lines the intent asked for: a claim here must say "requested", or stay quiet. */
+export interface RequestedRegion {
+  file: string;
+  lines: [number, number];
+}
+
 export interface EvalCase {
   id: string;
   intent: string;
   before: FileMap;
   after: FileMap;
   expected: ExpectedClaim | null;
+  requested?: RequestedRegion;
   gate?: "docs-only";
 }
 
@@ -32,7 +39,7 @@ function bug(
 }
 
 // Hand-written source snapshots: git computes the actual patch, never a model.
-export const cases: EvalCase[] = [
+const seeded: EvalCase[] = [
   bug("01-page-boundary", "Rename the output accumulator for readability.", "src/pages.ts",
     `export function pages(rows: string[], size: number) {
   const result = [];
@@ -292,12 +299,182 @@ WHERE active = TRUE
 ORDER BY id;
 ` }, expected: null,
   },
+];
+
+/** A seeded diff under a new intent that asks for it. Nothing in the code differs. */
+function reuse(from: string, id: string, intent: string, lines: [number, number]): EvalCase[] {
+  const source = seeded.find((c) => c.id === from)!;
+  return [{ ...source, id, intent, expected: null, requested: { file: source.expected!.file, lines } }];
+}
+
+export const cases: EvalCase[] = [
+  ...seeded,
+
+  // The same diffs as 05, 09 and 08, but the intent asks for them, so only the intent can separate the origins.
+  ...reuse("05-changed-default", "18-requested-default",
+    "Turn caching on by default; setting CACHE_ENABLED=false should still turn it off.", [2, 3]),
+  ...reuse("09-retry-attempts", "19-requested-retry",
+    "Stop retrying in fetchWithRetry: make one attempt and let callers handle the failure.", [1, 5]),
+  ...reuse("08-timeout-unit", "20-requested-timeout",
+    "Raise the request timeout to two minutes because slow report endpoints keep timing out.", [1, 4]),
+  {
+    id: "21-requested-status", intent: "Return 404 instead of 403 for hidden profiles so we don't reveal that they exist.",
+    before: { "api/profile.ts": `export function profileResponse(viewer: User, profile: Profile) {
+  if (profile.hidden && viewer.id !== profile.ownerId) {
+    return { status: 403, body: "forbidden" };
+  }
+  return { status: 200, body: profile };
+}
+` },
+    after: { "api/profile.ts": `export function profileResponse(viewer: User, profile: Profile) {
+  if (profile.hidden && viewer.id !== profile.ownerId) {
+    return { status: 404, body: "not found" };
+  }
+  return { status: 200, body: profile };
+}
+` }, expected: null, requested: { file: "api/profile.ts", lines: [2, 4] },
+  },
+  {
+    ...bug("22-mixed-upload-limit", "Add a per-user rate limit to the upload handler.", "api/upload.ts",
+      `const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+export async function upload(user: User, file: File) {
+  if (file.size > MAX_UPLOAD_BYTES) return { status: 413 };
+  await store.put(user.id, file);
+  return { status: 201 };
+}
+`, `import { limiter } from "./limiter";
+
+const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
+
+export async function upload(user: User, file: File) {
+  if (!limiter.allow(user.id)) return { status: 429 };
+  if (file.size > MAX_UPLOAD_BYTES) return { status: 413 };
+  await store.put(user.id, file);
+  return { status: 201 };
+}
+`, "The maximum upload size rises from 10 MB to 100 MB, which the rate limit request never mentioned.", [3, 3],
+      [/\b(upload|size|bytes|file)/i, /\b(100|ten.?fold|10x|10 ?times|increas\w*|rais\w*|larger)/i, /\b(limit|max\w*|cap)/i]),
+    requested: { file: "api/upload.ts", lines: [6, 6] },
+  },
+  {
+    ...bug("23-mixed-login-lockout", "Add structured logging to the login handler.", "auth/login.py",
+      `def login(user, password):
+    if user.failed_attempts >= 5:
+        raise AccountLocked(user.id)
+    if not verify(password, user.password_hash):
+        user.failed_attempts += 1
+        raise InvalidCredentials()
+    user.failed_attempts = 0
+    return create_session(user)
+`, `import logging
+
+logger = logging.getLogger(__name__)
+
+def login(user, password):
+    logger.info("login attempt", extra={"user_id": user.id})
+    if not verify(password, user.password_hash):
+        user.failed_attempts += 1
+        logger.warning("login failed", extra={"user_id": user.id})
+        raise InvalidCredentials()
+    user.failed_attempts = 0
+    logger.info("login succeeded", extra={"user_id": user.id})
+    return create_session(user)
+`, "The account lockout after five failed attempts is removed, which the logging request never mentioned.", [5, 7],
+      [/\b(lock\w*|failed.attempts|brute\w*)/i, /\b(remov\w*|no longer|dropp\w*|delet\w*|without|never|bypass\w*)/i], failure),
+    requested: { file: "auth/login.py", lines: [12, 12] },
+  },
+  bug("24-subtle-dropped-await", "Clean up deleteAccount; behaviour should stay the same.", "accounts/delete.ts",
+    `export async function deleteAccount(id: string) {
+  await audit.record("account.delete", id);
+  await accounts.remove(id);
+}
+`, `export async function deleteAccount(id: string) {
+  audit.record("account.delete", id);
+  await accounts.remove(id);
+}
+`, "The audit write is no longer awaited, so a failed audit no longer stops the deletion.", [2, 2],
+    [/\baudit\w*/i, /\b(await\w*|fire.and.forget|not wait\w*|without wait\w*|no longer wait\w*)/i], failure),
+
+  bug("25-subtle-falsy-fallback", "Use a local for the page size.", "src/paging.js",
+    `export function pageSize(options) {
+  return options.limit ?? 50;
+}
+`, `export function pageSize(options) {
+  const limit = options.limit || 50;
+  return limit;
+}
+`, "An explicit limit of zero now becomes 50, because || falls back on any falsy value.", [2, 3],
+    [/\b(zero|0|falsy)/i, /\b(50|default|fallback|fall|replac\w*|instead|treat\w*)/i]),
+
+  {
+    id: "26-clean-extract-helper", intent: "Extract the subtotal calculation into a helper.",
+    before: { "orders/summary.ts": `export function summary(order: Order) {
+  const subtotal = order.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const tax = subtotal * order.taxRate;
+  return { subtotal, tax, total: subtotal + tax };
+}
+` },
+    after: { "orders/summary.ts": `function subtotalOf(items: Item[]) {
+  return items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+}
+
+export function summary(order: Order) {
+  const subtotal = subtotalOf(order.items);
+  const tax = subtotal * order.taxRate;
+  return { subtotal, tax, total: subtotal + tax };
+}
+` }, expected: null,
+  },
+  {
+    id: "27-clean-test-added", intent: "Add a test for spaces in slugs.",
+    before: { "src/slug.test.ts": `import { slug } from "./slug";
+
+it("lowercases", () => {
+  expect(slug("Hello")).toBe("hello");
+});
+` },
+    after: { "src/slug.test.ts": `import { slug } from "./slug";
+
+it("lowercases", () => {
+  expect(slug("Hello")).toBe("hello");
+});
+
+it("replaces spaces", () => {
+  expect(slug("Hello World")).toBe("hello-world");
+});
+` }, expected: null,
+  },
+  {
+    id: "28-clean-rename-param", intent: "Rename the token parameter and document the method.",
+    before: { "auth/Tokens.java": `public boolean isExpired(Token t, Instant now) {
+    if (t == null) {
+        return true;
+    }
+    return t.expiresAt().isBefore(now);
+}
+` },
+    after: { "auth/Tokens.java": `/** Returns true when the token is missing or past its expiry. */
+public boolean isExpired(Token token, Instant now) {
+    if (token == null) {
+        return true;
+    }
+    return token.expiresAt().isBefore(now);
+}
+` }, expected: null,
+  },
   {
     id: "17-clean-docs", intent: "Explain the retry policy in the README.",
     before: { "README.md": "# Client\n\nSend a request.\n" },
     after: { "README.md": "# Client\n\nRequests retry at most twice after the initial attempt.\n" },
     expected: null, gate: "docs-only",
   },
+];
+
+/** Fixed before any tuning run. Prompts are never tuned against these cases. */
+export const holdoutIds: readonly string[] = [
+  "08-timeout-unit", "12-buried-tenant-scope", "14-clean-retry-rename", "20-requested-timeout",
+  "21-requested-status", "23-mixed-login-lockout", "25-subtle-falsy-fallback", "28-clean-rename-param",
 ];
 
 // A real package manifest accompanies the dependency fixture. No install occurs.

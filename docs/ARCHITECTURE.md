@@ -49,6 +49,10 @@ The daemon deduplicates reviews by a SHA-256 identity of canonical repository pa
 
 `GET /v1/events` is a server-sent event stream, so the UI needn't poll. Events only say that a review or a repo's fog changed, and the UI refetches. While someone is listening, the daemon checks each reviewed repo's HEAD and `refs/notes/viva` every 2 seconds, as a commit changes the fog without any review. There's no stage-by-stage progress during a review, and events aren't replayed after a reconnect.
 
+`GET /v1/fog` maps the repo of the most recent push, unless `?repo` names one. The daemon only holds that in memory, so after a restart it returns an empty map with `repoPath: null` until the next push.
+
+`GET /v1/reviews` lists reviews newest first, and a repeat push of a decided change moves it to the front. The UI opens the first one when the URL has no review ID.
+
 ## Design rules
 
 - **Fail open.** If the daemon is down, the push goes through with a warning. Reliability beats coverage, as in HRT's Blobby talk.
@@ -64,7 +68,7 @@ The daemon deduplicates reviews by a SHA-256 identity of canonical repository pa
 - A push mixing agent and hand-written commits gets context for the agent commits only, so a hand-written change can look unrequested.
 - Session text is fenced with `untrusted()` but the injection scan only covers the diff, so a hostile transcript relies on that fence alone.
 - Traces don't exist yet. When they do, they must store stage names and token counts only, as `LlmRequest.user` holds the transcript.
-- `pnpm evals` still uses the mock provider, so check quality on real diffs is unmeasured.
+- `pnpm evals` is offline; `pnpm evals:live` measures Gemini claims. The corpus is small and hand-written, and Flash-Lite versus Flash is still unmeasured; see [EVALS.md](EVALS.md).
 - The fog is per file, with blast radius at 0. Symbol-level needs entire-graph.
 - Full reviews and feedback are held in memory. Only completed retry decisions survive daemon restart.
 - Ledger notes aren't pushed automatically yet.

@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
-import { Answer, ReviewCode, ReviewFeedback, ReviewRequest, VivaEvent, type Review } from "@viva/contracts";
+import { Answer, FogMap, ReviewCode, ReviewFeedback, ReviewRequest, VivaEvent, type Review } from "@viva/contracts";
 import {
+  allowsPush,
   appendAttestations,
   codeWindow,
   computeFog,
@@ -55,6 +56,8 @@ export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 200
   const publish = (event: VivaEvent) => { for (const listener of listeners) listener(event); };
   /** The last fog version seen for each repo that has been reviewed. */
   const fogVersions = new Map<string, string>();
+  /** The repo the Fog maps by default: the one most recently pushed. Forgotten on restart. */
+  let latestRepo: string | null = null;
   let fogPoll: NodeJS.Timeout | undefined;
   let checkingFog = false;
 
@@ -100,6 +103,14 @@ export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 200
     }
     const initial = await pending;
     const review = reviews.get(initial.id) ?? initial;
+    // A push of an already decided change counts as the newest review again.
+    reviews.delete(review.id);
+    reviews.set(review.id, review);
+    if (latestRepo !== review.request.repoPath) {
+      latestRepo = review.request.repoPath;
+      // The Fog now maps another repo, even if neither repo itself changed.
+      publish({ type: "fog", repoPath: latestRepo });
+    }
     return c.json(review);
   });
 
@@ -135,6 +146,8 @@ export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 200
     if (current.gate?.skippable === false || changing.has(current.id)) {
       return c.json({ error: "this gate cannot be skipped" }, 409);
     }
+    // Skipping an allowed push would overwrite its pass with debt in the receipt.
+    if (current.gate && allowsPush(current.gate)) return c.json({ error: "this push is already allowed" }, 409);
     const review = skipWithDebt(current);
     changing.add(current.id);
     try {
@@ -213,8 +226,16 @@ export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 200
   }));
 
   app.get("/v1/fog", async (c) => {
-    const repoPath = c.req.query("repo") ?? process.cwd();
-    return c.json(computeFog(await loadFogFiles(repoPath), await readLedger(repoPath), new Date()));
+    const fog = async (repoPath: string) => FogMap.parse({
+      repoPath, ...computeFog(await loadFogFiles(repoPath), await readLedger(repoPath), new Date()),
+    });
+    const requested = c.req.query("repo");
+    if (requested) return c.json(await fog(requested));
+    const remembered = latestRepo;
+    const map = remembered ? await fog(remembered).catch(() => null) : null;
+    // A repo that has since moved or gone is forgotten, rather than failing every request.
+    if (remembered && !map && latestRepo === remembered) latestRepo = null;
+    return c.json(map ?? FogMap.parse({ repoPath: null, generatedAt: new Date().toISOString(), debt: 0, nodes: [] }));
   });
 
   app.onError((error, c) => {

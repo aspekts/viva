@@ -82,3 +82,128 @@ describe("watch", () => {
     expect(refresh).not.toHaveBeenCalled();
   });
 });
+
+describe("reviews", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const daemon = (body: unknown) => {
+    const fetch = vi.fn(async () => new Response(JSON.stringify(body), { status: 200 }));
+    vi.stubGlobal("fetch", fetch);
+    return fetch;
+  };
+  const sample = async () => JSON.parse(JSON.stringify((await import("../../../../fixtures/mock/review.json")).default));
+
+  it("opens the newest live review, never sample data", async () => {
+    const live = { ...(await sample()), id: "live-review" };
+    const fetch = daemon([live, { ...live, id: "older" }]);
+    const { getLatestReview } = await client("");
+    expect((await getLatestReview())?.id).toBe("live-review");
+    expect(fetch).toHaveBeenCalledWith("/v1/reviews", undefined);
+  });
+
+  it("returns null, not the mock review, when the daemon has no reviews", async () => {
+    daemon([]);
+    const { getLatestReview } = await client("");
+    expect(await getLatestReview()).toBeNull();
+  });
+
+  it("fetches a review by ID from the daemon outside mock mode", async () => {
+    const fetch = daemon({ ...(await sample()), id: "a/b" });
+    const { getReview } = await client("");
+    expect((await getReview("a/b")).id).toBe("a/b");
+    expect(fetch).toHaveBeenCalledWith("/v1/reviews/a%2Fb", undefined);
+  });
+
+  it("uses sample data only in mock mode, with &empty for the empty state", async () => {
+    const fetch = daemon([]);
+    expect((await (await client("?mock")).getLatestReview())?.id).toBe("mock-review");
+    expect(await (await client("?mock&empty")).getLatestReview()).toBeNull();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("skipReview", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("posts the skip and returns the new review", async () => {
+    const sample = JSON.parse(JSON.stringify((await import("../../../../fixtures/mock/review.json")).default));
+    const fetch = vi.fn(async () => new Response(JSON.stringify({ ...sample, stage: "done", gate: { verdict: "approve", reason: "skipped-with-debt", skippable: true } })));
+    vi.stubGlobal("fetch", fetch);
+    const { skipReview } = await client("");
+    expect((await skipReview("r1")).gate?.reason).toBe("skipped-with-debt");
+    expect(fetch).toHaveBeenCalledWith("/v1/reviews/r1/skip", { method: "POST" });
+  });
+
+  it("surfaces the daemon's refusal of a hard gate as a 409", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: "this gate cannot be skipped" }), { status: 409 })));
+    const { ApiError, skipReview } = await client("");
+    const refusal = await skipReview("r1").catch((e: unknown) => e);
+    expect(refusal).toBeInstanceOf(ApiError);
+    expect(refusal).toMatchObject({ status: 409 });
+  });
+
+  it("skips the mock exam, and refuses the mock hard gate", async () => {
+    vi.stubGlobal("fetch", vi.fn());
+    expect((await (await client("?mock")).skipReview("mock-review")).gate?.reason).toBe("skipped-with-debt");
+    const hard = await client("?mock&hard");
+    expect((await hard.getLatestReview())?.gate).toMatchObject({ reason: "injection-suspected", skippable: false });
+    await expect(hard.skipReview("mock-hard-gate")).rejects.toMatchObject({ status: 409 });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("reviewLoader", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  /** A daemon whose responses arrive only when the test releases them, in any order. */
+  function slowDaemon() {
+    const pending: ((body: unknown) => void)[] = [];
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((resolve) => {
+      pending.push((body) => resolve(new Response(JSON.stringify(body))));
+    })));
+    return pending;
+  }
+  const review = async (id: string) => ({ ...JSON.parse(JSON.stringify((await import("../../../../fixtures/mock/review.json")).default)), id });
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it("ignores an older answer that arrives after a newer one", async () => {
+    const pending = slowDaemon();
+    const { reviewLoader } = await client("");
+    const shown: (string | null)[] = [];
+    const loader = reviewLoader(null, (r) => shown.push(r?.id ?? null), () => {});
+    loader.load();
+    loader.load();
+    pending[1]!([await review("newest-B")]);
+    await settle();
+    pending[0]!([await review("older-A")]);
+    await settle();
+    expect(shown).toEqual(["newest-B"]);
+  });
+
+  it("stays on the opened review when a newer one is pushed", async () => {
+    const pending = slowDaemon();
+    const { reviewLoader } = await client("");
+    const shown: (string | null)[] = [];
+    const loader = reviewLoader(null, (r) => shown.push(r?.id ?? null), () => {});
+    loader.load();
+    pending[0]!([await review("first")]);
+    await settle();
+    loader.load();
+    expect(fetch).toHaveBeenLastCalledWith("/v1/reviews/first", undefined);
+    pending[1]!(await review("first"));
+    await settle();
+    expect(shown).toEqual(["first", "first"]);
+  });
+
+  it("reports nothing after it stops", async () => {
+    const pending = slowDaemon();
+    const { reviewLoader } = await client("");
+    const onLoad = vi.fn();
+    const loader = reviewLoader(null, onLoad, () => {});
+    loader.load();
+    loader.stop();
+    pending[0]!([await review("late")]);
+    await settle();
+    expect(onLoad).not.toHaveBeenCalled();
+  });
+});
