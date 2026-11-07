@@ -28,6 +28,7 @@ export interface ExamRow {
   /** The most generous verdict either wrong answer received. */
   wrong?: Verdict;
   error?: boolean;
+  rateLimited?: boolean;
 }
 
 const passes = (v?: Verdict) => v === "approve" || v === "endorse";
@@ -76,6 +77,7 @@ export async function runExamEval(
     } catch (error) {
       row.error = true;
       if (error instanceof Error && error.message.startsWith("Gemini returned 429")) {
+        row.rateLimited = true;
         rows.push(row);
         onRow?.(row);
         break;

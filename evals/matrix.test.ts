@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { cases, checkNames, holdoutIds, type EvalCase } from "./cases/index.js";
 import { runExamEval, summarizeExam } from "./exam.js";
 import { gradeClaims, hash, matchesClaim, report, runMatrix, safeError, summarize } from "./matrix.js";
-import { main } from "./run.js";
+import { main, RATE_LIMITED_EXIT } from "./run.js";
 
 const bug = cases[0]!;
 const clean = cases.find((c) => c.id === "13-clean-guard")!;
@@ -220,6 +220,15 @@ describe("live opt-in", () => {
     expect(await main(["--live"])).toBe(0);
     expect(fetch).not.toHaveBeenCalled();
     expect(log).toHaveBeenCalledWith(expect.stringContaining("SKIP live evals"));
+  });
+  it.each([[["--live", "--split", "holdout"]], [["--live", "--exam", "--split", "holdout"]]])("exits distinctly and says so on a 429: %j", async (args) => {
+    vi.spyOn(process, "loadEnvFile").mockImplementation(() => {});
+    vi.stubEnv("GEMINI_API_KEY", "test-key");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("private response body", { status: 429 })));
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    expect(await main(args)).toBe(RATE_LIMITED_EXIT);
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("STOPPED: HTTP 429"));
+    expect(log).not.toHaveBeenCalledWith(expect.stringContaining("private response body"));
   });
   it("Gemini does not retry a shared-key 429 in eval mode", async () => {
     const fetch = vi.fn().mockResolvedValue(new Response("private response body", { status: 429 }));

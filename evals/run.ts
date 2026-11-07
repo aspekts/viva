@@ -32,6 +32,13 @@ export async function runEvals(llm: LlmProvider = new MockProvider()) {
   return rows;
 }
 
+/** Distinct from a poor score, so a script chaining runs can stop too. */
+export const RATE_LIMITED_EXIT = 75;
+function stoppedOnRateLimit(): number {
+  console.log("STOPPED: HTTP 429. Do not start another live run on this shared key.");
+  return RATE_LIMITED_EXIT;
+}
+
 export async function main(args = process.argv.slice(2)): Promise<number> {
   const live = args.includes("--live");
   const reportAt = args.indexOf("--report");
@@ -69,6 +76,7 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
     if (!live) throw new Error("--exam requires --live");
     const rows = await runExamEval(selected, await loadChecks(CHECKS_DIR), llm, (row) => console.log(JSON.stringify(row)), paceMs);
     console.log(JSON.stringify(summarizeExam(rows, selected)));
+    if (rows.some((row) => row.rateLimited)) return stoppedOnRateLimit();
     return rows.some((row) => row.error) ? 1 : 0;
   }
   console.log(`Provider: ${llm.id}; model: ${model}. Sequential check calls.`);
@@ -84,6 +92,7 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
     const kept = previous.includes(REPORT_MARKER) ? previous.slice(0, previous.indexOf(REPORT_MARKER)) : "# Live check evals\n\n";
     await writeFile(resolve(reportPath), kept + report(matrix, selected), "utf8");
   }
+  if (matrix.stopped) return stoppedOnRateLimit();
   if (!live) {
     console.log("Mock matrix scores are harness diagnostics, not quality assertions. Use pnpm evals:live for Gemini.");
     return summary.complete ? 0 : 1;
