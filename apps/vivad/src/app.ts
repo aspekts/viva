@@ -198,6 +198,8 @@ export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 200
 
   /** Only runs while someone is listening. Commits change the fog without any review. */
   app.get("/v1/events", (c) => streamSSE(c, async (stream) => {
+    // Registered before any await, as Hono won't call a handler added after the abort.
+    const closed = new Promise<void>((resolve) => stream.onAbort(resolve));
     const listener = (event: VivaEvent) => { void stream.writeSSE({ data: JSON.stringify(VivaEvent.parse(event)) }); };
     listeners.add(listener);
     fogPoll ??= setInterval(async () => {
@@ -207,13 +209,16 @@ export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 200
       await Promise.all([...fogVersions.keys()].map(checkFog));
       checkingFog = false;
     }, fogPollMs).unref();
-    // Sends the headers now, so the browser knows the stream is open.
-    await stream.write(": connected\n\n");
-    await new Promise<void>((resolve) => stream.onAbort(resolve));
-    listeners.delete(listener);
-    if (listeners.size === 0) {
-      clearInterval(fogPoll);
-      fogPoll = undefined;
+    try {
+      // Sends the headers now, so the browser knows the stream is open.
+      await stream.write(": connected\n\n");
+      if (!stream.aborted) await closed;
+    } finally {
+      listeners.delete(listener);
+      if (listeners.size === 0) {
+        clearInterval(fogPoll);
+        fogPoll = undefined;
+      }
     }
   }));
 
@@ -231,9 +236,9 @@ export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 200
   });
 
   app.onError((error, c) => {
-    // Errors from a provider may contain model/repository text. Never log it.
-    console.error("vivad: request failed");
-    return c.json({ error: "Viva request failed" }, 500);
+    // Messages can quote model output or session text, so neither leaves here.
+    console.error(`vivad: request failed (${error.constructor.name})`);
+    return c.json({ error: "internal error" }, 500);
   });
 
   return app;
