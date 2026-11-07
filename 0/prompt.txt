@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bhuq3xjhl</task-id>
+<tool-use-id>toolu_01HmoVHL5qgF5uuM4qnoNK8c</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-marcus--t3-worktrees-viva-tuning-silent-decision/2a6b63c6-731f-4ddd-982c-c5c8172538b1/tasks/bhuq3xjhl.output</output-file>
+<status>completed</status>
+<summary>Background command "Run frozen live evals on both models sequentially" completed (exit code 0)</summary>
+</task-notification>
