@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { fixtureRepo, grepBlastRadius, loadChecks, MockProvider, startReview, type LlmProvider } from "@viva/engine";
 import { cases } from "./cases/index.js";
+import { runDirectionEvals } from "./direction.js";
 
 /**
  * Tests for prompts. With the mock provider this proves the harness and the
@@ -23,7 +24,7 @@ export async function runEvals(llm: LlmProvider = new MockProvider()) {
   return rows;
 }
 
-const rows = await runEvals();
+const rows = [...await runEvals(), ...await runDirectionEvals(new MockProvider(), await loadChecks(CHECKS_DIR))];
 console.table(rows);
 const failed = rows.filter((r) => !r.pass);
 console.log(`${rows.length - failed.length}/${rows.length} passed (provider: mock)`);

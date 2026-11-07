@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
-import type { Answer, Attestation, Claim, Gate, Review, ReviewRequest } from "@viva/contracts";
+import type { Answer, Attestation, Claim, Gate, MemoryEntry, Review, ReviewRequest } from "@viva/contracts";
 import { defaults, type VivaConfig } from "../config.js";
 import { masteryFor } from "../ledger/mastery.js";
 import { MeteredProvider, type LlmProvider } from "../llm/provider.js";
+import { relevantMemory } from "../memory/retrieve.js";
 import { blobHash, loadChange } from "../sources/git.js";
 import type { BlastRadiusSource } from "../sources/graph.js";
 import { resolveSession, type SessionSource } from "../sources/session.js";
@@ -22,6 +23,8 @@ export interface ReviewDeps {
   ledger: Attestation[];
   config?: VivaConfig;
   now?: () => Date;
+  /** Recorded decisions for the changed files. Defaults to reading `.viva/memory/` from git. */
+  memory?: (repoPath: string, base: string, head: string, files: string[]) => Promise<MemoryEntry[]>;
 }
 
 const finish = (review: Review, gate: Gate, now: Date): Review => ({
@@ -58,7 +61,12 @@ export async function startReview(request: ReviewRequest, deps: ReviewDeps): Pro
   if (injection) return finish(review, injection, now());
 
   const session = await resolveSession(deps.session, request.repoPath, request.head, request.intent);
-  const claims = await runChecks(deps.checks, change, session, llm);
+  // Deterministic, before any model call. Missing or broken memory must never block a push.
+  const memory = await (deps.memory ?? relevantMemory)(request.repoPath, request.base, request.head, change.files.map((f) => f.path))
+    .catch(() => []);
+  const claims = await runChecks(deps.checks, change, session, llm, memory);
+  // Knowing the code doesn't settle whether reversing a recorded decision is intended.
+  const memoryChecks = new Set(deps.checks.filter((c) => c.needs === "memory").map((c) => c.name));
 
   const inputs = new Map<string, number>();
   const hashes = new Map<string, string | null>();
@@ -75,7 +83,9 @@ export async function startReview(request: ReviewRequest, deps: ReviewDeps): Pro
     (claim) => ({
       blastRadius: inputs.get(claim.id) ?? 0,
       untested: tested ? 0.25 : 1,
-      mastery: masteryFor(deps.ledger, request.person, claim.location.file, hashes.get(claim.location.file) ?? null, now(), config),
+      mastery: memoryChecks.has(claim.check)
+        ? 0
+        : masteryFor(deps.ledger, request.person, claim.location.file, hashes.get(claim.location.file) ?? null, now(), config),
     }),
     config,
   );
