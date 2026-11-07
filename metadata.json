@@ -1,0 +1,45 @@
+{
+  "cli_version": "0.13.1",
+  "checkpoint_id": "01M6VZEV2423R44WE9W37RZDKX",
+  "strategy": "manual-commit",
+  "branch": "queue/5-skip",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "apps/vivad/src/app.test.ts",
+    "apps/vivad/src/app.ts",
+    "apps/vivad/src/fixtures.test.ts",
+    "apps/web/src/api/client.test.ts",
+    "apps/web/src/api/client.ts",
+    "fixtures/mock/review-hard-gate.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 6,
+    "cache_creation_tokens": 7529,
+    "cache_read_tokens": 520123,
+    "output_tokens": 5965,
+    "api_call_count": 3
+  },
+  "redaction": {
+    "replacements": 1,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 1,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
