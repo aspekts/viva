@@ -15,6 +15,7 @@ export function FogView() {
 
   if (error) return <p role="alert">Could not load the map: {error}. Add ?mock to the URL to use sample data.</p>;
   if (!map) return <p>Loading the map…</p>;
+  if (!map.repoPath) return <p>No repo to map yet. Push from a repo with the Viva hook installed, and it appears here.</p>;
 
   const sorted = [...map.nodes].sort((a, b) => b.size - a.size);
   return (

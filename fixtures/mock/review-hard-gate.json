@@ -1,0 +1,26 @@
+{
+  "id": "mock-hard-gate",
+  "request": {
+    "repoPath": "/demo",
+    "base": "abc123",
+    "head": "def456",
+    "person": "Marcus",
+    "intent": "add retries to the payment webhook"
+  },
+  "stage": "done",
+  "claims": [],
+  "plan": null,
+  "grades": [],
+  "gate": {
+    "verdict": "defer",
+    "reason": "injection-suspected",
+    "skippable": false
+  },
+  "usage": {
+    "inputTokens": 0,
+    "outputTokens": 0,
+    "llmCalls": 0
+  },
+  "startedAt": "2026-11-07T18:00:00.000Z",
+  "finishedAt": "2026-11-07T18:00:01.000Z"
+}

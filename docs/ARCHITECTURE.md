@@ -49,6 +49,10 @@ The daemon deduplicates reviews by a SHA-256 identity of canonical repository pa
 
 `GET /v1/events` is a server-sent event stream, so the UI needn't poll. Events only say that a review or a repo's fog changed, and the UI refetches. While someone is listening, the daemon checks each reviewed repo's HEAD and `refs/notes/viva` every 2 seconds, as a commit changes the fog without any review. There's no stage-by-stage progress during a review, and events aren't replayed after a reconnect.
 
+`GET /v1/fog` maps the repo of the most recent push, unless `?repo` names one. The daemon only holds that in memory, so after a restart it returns an empty map with `repoPath: null` until the next push.
+
+`GET /v1/reviews` lists reviews newest first, and a repeat push of a decided change moves it to the front. The UI opens the first one when the URL has no review ID.
+
 ## Design rules
 
 - **Fail open.** If the daemon is down, the push goes through with a warning. Reliability beats coverage, as in HRT's Blobby talk.

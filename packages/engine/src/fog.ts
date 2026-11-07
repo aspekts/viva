@@ -12,7 +12,7 @@ export interface FogFile {
 }
 
 /** fog = 1 - the best mastery anyone on the team holds. */
-export function computeFog(files: FogFile[], ledger: Attestation[], now: Date, config: VivaConfig = defaults): FogMap {
+export function computeFog(files: FogFile[], ledger: Attestation[], now: Date, config: VivaConfig = defaults): Omit<FogMap, "repoPath"> {
   const nodes: FogNode[] = files.map(({ file, size, blastRadius, hash }) => {
     const best = new Map<string, number>();
     for (const a of ledger.filter((entry) => entry.file === file)) {
