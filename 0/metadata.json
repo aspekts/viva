@@ -1,0 +1,44 @@
+{
+  "cli_version": "0.13.1",
+  "checkpoint_id": "01M6VZBQ4ER8E2J4R7BQEVYD38",
+  "session_id": "5cb9ac1b-18bd-498a-8f04-f26be27d817b",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-07T21:41:48.114008Z",
+  "branch": "queue/4-latest-review",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "apps/vivad/src/app.test.ts",
+    "apps/vivad/src/app.ts",
+    "apps/web/src/api/client.test.ts",
+    "apps/web/src/api/client.ts",
+    "apps/web/src/exam/ExamRoom.tsx",
+    "docs/ARCHITECTURE.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "918bed5408dc",
+  "checkpoint_transcript_start": 336,
+  "transcript_lines_at_start": 336,
+  "compact_transcript_start": 42,
+  "token_usage": {
+    "input_tokens": 4,
+    "cache_creation_tokens": 6417,
+    "cache_read_tokens": 328993,
+    "output_tokens": 5053,
+    "api_call_count": 2
+  },
+  "redaction": {
+    "replacements": 1,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 1,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}

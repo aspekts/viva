@@ -1,0 +1,45 @@
+{
+  "cli_version": "0.13.1",
+  "checkpoint_id": "01M6VZBQ4ER8E2J4R7BQEVYD38",
+  "strategy": "manual-commit",
+  "branch": "queue/4-latest-review",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "apps/vivad/src/app.test.ts",
+    "apps/vivad/src/app.ts",
+    "apps/web/src/api/client.test.ts",
+    "apps/web/src/api/client.ts",
+    "apps/web/src/exam/ExamRoom.tsx",
+    "docs/ARCHITECTURE.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 4,
+    "cache_creation_tokens": 6417,
+    "cache_read_tokens": 328993,
+    "output_tokens": 5053,
+    "api_call_count": 2
+  },
+  "redaction": {
+    "replacements": 1,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 1,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
