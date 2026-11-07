@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bt0ogx73i</task-id>
+<tool-use-id>toolu_014VmKKTQ9ay2ptybepHbm3Y</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-marcus--t3-worktrees-viva-tuning-silent-decision/2a6b63c6-731f-4ddd-982c-c5c8172538b1/tasks/bt0ogx73i.output</output-file>
+<status>failed</status>
+<summary>Background command "After a 25 minute cooldown, run one slow Flash comparison" failed with exit code 75</summary>
+</task-notification>
