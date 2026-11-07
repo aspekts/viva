@@ -333,9 +333,11 @@ describe("vivad", () => {
       await events.close();
       await vi.waitFor(() => expect(clear).toHaveBeenCalled());
       clear.mockRestore();
+      await new Promise((resolve) => setTimeout(resolve, 200));
     });
 
     it("stays quiet when a repo hasn't changed", async () => {
+      const clear = vi.spyOn(globalThis, "clearInterval");
       const app = createApp(new MockProvider(), { fogPollMs: 20 });
       const request = fixture();
       await start(app, request);
@@ -344,6 +346,10 @@ describe("vivad", () => {
       const late = await Promise.race([events.until(() => true), new Promise((resolve) => setTimeout(() => resolve(null), 60))]);
       expect(late).toBeNull();
       await events.close();
+      await vi.waitFor(() => expect(clear).toHaveBeenCalled());
+      clear.mockRestore();
+      // Lets the last check's git exit, as Windows can't delete a directory a process runs in.
+      await new Promise((resolve) => setTimeout(resolve, 200));
     });
   });
 });
