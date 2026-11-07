@@ -6,7 +6,7 @@ import { decayedMastery } from "../ledger/mastery.js";
 import { appendAttestations, readLedger } from "../ledger/notes.js";
 import { GeminiProvider, toGeminiSchema } from "../llm/gemini.js";
 import { MockProvider } from "../llm/mock.js";
-import { BudgetExceededError, MeteredProvider, untrusted } from "../llm/provider.js";
+import { BudgetExceededError, MeteredProvider, untrusted, type LlmProvider } from "../llm/provider.js";
 import { fixtureRepo } from "../testing.js";
 import { blobHash } from "../sources/git.js";
 import { grepBlastRadius } from "../sources/graph.js";
@@ -248,6 +248,48 @@ describe("full review", () => {
     const { review: done } = await submitAnswers(review, [], deps());
     expect(done.gate?.reason).toBe("exam-failed");
     expect(done.usage.llmCalls).toBe(review.usage.llmCalls);
+  });
+
+  /** A provider whose exam plan comes back with the given questions. */
+  const planning = (questions: (claimIds: string[]) => unknown[]): LlmProvider => {
+    const mock = new MockProvider();
+    return {
+      id: "planning",
+      complete: async (request) => {
+        if (request.name !== "plan") return mock.complete(request);
+        const claimIds = [...request.user.matchAll(/"id":"([^"]+)"/g)].map((m) => m[1]!);
+        return { value: request.schema.parse({ questions: questions(claimIds) }), inputTokens: 1, outputTokens: 1 };
+      },
+    };
+  };
+  const question = (claimId: string, id = "q1") => ({
+    id, claimId, ask: "What happens?", mustMention: ["behaviour"], followUpIfVague: "Why?",
+    location: { file: "src/pay.ts", lines: [2, 2] },
+  });
+
+  it.each([
+    ["no questions", () => []],
+    ["only questions about claims it wasn't given", () => [question("invented-claim")]],
+  ])("never turns a plan with %s into a pass", async (_, questions) => {
+    const { repo, base, head } = fixtureRepo(before, risky);
+    await expect(startReview({ repoPath: repo, base, head, person: "Kay" }, deps({ llm: planning(questions) })))
+      .rejects.toThrow(/exam plan/);
+  });
+
+  it("drops questions about unknown claims and keeps the rest", async () => {
+    const { repo, base, head } = fixtureRepo(before, risky);
+    const review = await startReview(
+      { repoPath: repo, base, head, person: "Kay" },
+      deps({ llm: planning((ids) => [question("invented-claim", "q0"), question(ids[0]!)]) }),
+    );
+    expect(review.plan?.questions.map((q) => q.id)).toEqual(["q1"]);
+  });
+
+  it("refuses to grade an exam with no questions", async () => {
+    const { repo, base, head } = fixtureRepo(before, risky);
+    const review = await startReview({ repoPath: repo, base, head, person: "Kay" }, deps());
+    await expect(submitAnswers({ ...review, plan: { questions: [] } }, [], deps())).rejects.toThrow(/not awaiting/);
+    expect(() => aggregateGrades([])).toThrow(/no graded answers/);
   });
 
   it("refuses to skip a hard gate", async () => {

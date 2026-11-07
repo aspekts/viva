@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { execFileSync } from "node:child_process";
-import { readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Review, ReviewCode, ReviewFeedback } from "@viva/contracts";
 import { fixtureRepo, MockProvider, type LlmProvider } from "@viva/engine";
@@ -265,5 +265,19 @@ describe("vivad", () => {
     expect(await response.text()).not.toContain(canary);
     expect(JSON.stringify(log.mock.calls)).not.toContain(canary);
     log.mockRestore();
+  });
+
+  it("fails open rather than recording a pass when the exam plan has no questions", async () => {
+    const mock = new MockProvider();
+    const emptyPlan: LlmProvider = {
+      id: "empty-plan",
+      complete: async (request) => request.name === "plan"
+        ? { value: request.schema.parse({ questions: [] }), inputTokens: 1, outputTokens: 1 }
+        : mock.complete(request),
+    };
+    const request = fixture();
+    const response = await post(createApp(emptyPlan), "/v1/reviews", request);
+    expect(response.status).toBe(500);
+    expect(existsSync(join(request.repoPath, ".git", "viva-decisions"))).toBe(false);
   });
 });

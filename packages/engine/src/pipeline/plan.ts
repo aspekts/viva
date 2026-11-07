@@ -20,5 +20,9 @@ export async function planExam(claims: RankedClaim[], llm: LlmProvider): Promise
     user: untrusted("claims", JSON.stringify(brief)),
     schema: ExamPlan,
   });
-  return value;
+  // A plan with no usable questions would grade as a pass, so it's a pipeline failure.
+  const asked = new Set(brief.map((c) => c.id));
+  const questions = value.questions.filter((q) => asked.has(q.claimId));
+  if (questions.length === 0) throw new Error("exam plan asked about none of the risky claims");
+  return { questions };
 }
