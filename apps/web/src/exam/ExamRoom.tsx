@@ -1,18 +1,9 @@
 import { useEffect, useState } from "react";
 import type { Review } from "@viva/contracts";
-import { ApiError, getReview, isMockMode, submitAnswers } from "../api/client";
+import { getReview, isMockMode, submitAnswers } from "../api/client";
 import { buildAnswers, countUnanswered, type Drafts } from "./answers";
+import { loadErrorMessage, submitErrorMessage } from "./messages";
 import { pushAllowed } from "./verdict";
-
-const loadErrorMessage = (error: unknown): string =>
-  error instanceof ApiError && error.status === 404
-    ? "This review is no longer available. Run `git push` again to start a new one."
-    : "Could not load this review. Check that the daemon is running, then try again.";
-
-const submitErrorMessage = (error: unknown): string =>
-  error instanceof ApiError && error.status === 409
-    ? "This exam is already finished. Reload the page to see the result."
-    : "Could not submit your answers. They are still here, so try again.";
 
 const ReviewResult = ({ review }: { review: Review }) => {
   const gate = review.gate;
@@ -70,10 +61,11 @@ export function ExamRoom({ reviewId }: { reviewId: string | null }) {
 
   if (!hasReview) return <p>No exam to show. Push a risky change and open the link it prints.</p>;
   if (loadError) return <p role="alert">{loadError}</p>;
-  if (!review) return <p>Loading the exam…</p>;
+  if (!review) return <p role="status">Loading the exam…</p>;
   if (review.gate) return <ReviewResult review={review} />;
 
   const questions = review.plan?.questions ?? [];
+  if (questions.length === 0) return <p>This review has no questions to answer.</p>;
   const unanswered = countUnanswered(questions, drafts);
 
   const submit = async () => {
@@ -102,14 +94,23 @@ export function ExamRoom({ reviewId }: { reviewId: string | null }) {
           <textarea
             value={drafts[q.id] ?? ""}
             disabled={submitting}
-            onChange={(e) => setDrafts({ ...drafts, [q.id]: e.target.value })}
+            onChange={(e) => {
+              const { value } = e.target;
+              setDrafts((current) => ({ ...current, [q.id]: value }));
+            }}
           />
         </label>
       ))}
-      {unanswered > 0 && <p>{unanswered} unanswered. Blank answers score zero.</p>}
+      {unanswered > 0 && (
+        <p>
+          {unanswered === questions.length
+            ? "Answer at least one question to submit."
+            : `${unanswered} unanswered. Blank answers score zero.`}
+        </p>
+      )}
       {submitError && <p role="alert">{submitError}</p>}
-      <button onClick={submit} disabled={submitting}>
-        {submitting ? "Grading…" : "Submit answers"}
+      <button onClick={submit} disabled={submitting || unanswered === questions.length}>
+        {submitting ? <span role="status">Grading…</span> : "Submit answers"}
       </button>
     </section>
   );
