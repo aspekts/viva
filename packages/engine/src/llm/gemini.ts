@@ -15,7 +15,7 @@ export function toGeminiSchema(schema: unknown): unknown {
 
 const RETRYABLE = new Set([429, 500, 502, 503, 504]);
 const ATTEMPTS_PER_MODEL = 2;
-const REQUEST_TIMEOUT_MS = 30_000;
+const REQUEST_TIMEOUT_MS = 12_000;
 
 export class GeminiProvider implements LlmProvider {
   readonly id = "gemini";
