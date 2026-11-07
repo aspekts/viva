@@ -437,6 +437,24 @@ describe("vivad", () => {
     expect(await list()).toEqual([a.id, b.id]);
   });
 
+  it("refuses to skip a push that is already allowed, so a pass isn't overwritten with debt", async () => {
+    const app = createApp(new MockProvider());
+    const request = fixture();
+    const review = await start(app, request);
+    await answer(app, review, "behaviour");
+    expect((await post(app, `/v1/reviews/${review.id}/skip`, {})).status).toBe(409);
+    expect((await start(createApp(new MockProvider()), request)).gate?.reason).toBe("exam-passed");
+  });
+
+  it("allows skipping a failed exam", async () => {
+    const app = createApp(new MockProvider());
+    const review = await start(app, fixture());
+    await answer(app, review, "I don't know");
+    const skipped = await post(app, `/v1/reviews/${review.id}/skip`, {});
+    expect(skipped.status).toBe(200);
+    expect(Review.parse(await skipped.json()).gate?.reason).toBe("skipped-with-debt");
+  });
+
   it("keeps error text out of the log and the response", async () => {
     const canary = "CANARY-quoted-from-the-transcript";
     const failing: LlmProvider = {
