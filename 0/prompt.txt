@@ -1,0 +1,43 @@
+Act as the implementation sub-agent for this task.
+
+Build Viva's decision memory in aspekts/viva, a hackathon project (HackTheBurgh, submission Sunday 12:00; sprint 2 ends 09:00). It covers two things, as two small stacked PRs:
+
+PR A, GitHub issue #18, "Save spoken reasoning": store the explanation from a passed viva as project memory. Done when a later agent session can find the reasoning.
+
+PR B, the stretch goal "Memory layer for 'is this the right direction?' questions": use stored decisions to question new changes that cut across them.
+
+Why it matters (the pitch): Viva gates `git push` with a short spoken or typed exam on the riskiest parts of AI-written code, and shows a "Fog" map of code nobody understands.
+- **G-Research judges** run an internal AI tool that reviews PRs for direction and blockers, and want to "make the invisible visible". A memory of why code is the way it is, which challenges later changes that contradict it, is our moat against stateless quiz gates (docs/DESIGN.md section 2: "Memory: stateless vs a ledger", and "your explanation saved as project memory").
+- **Entire's MLH prize** values Brain (repository memory from sessions) and measurable token efficiency.
+Read docs/DESIGN.md, AGENTS.md, docs/ARCHITECTURE.md, packages/engine/src/pipeline/*, packages/engine/src/ledger/*, packages/engine/src/sources/session.ts, apps/vivad/src/app.ts and the checks/ folder first.
+
+Your worktree starts at branch queue/5-skip, the top of a stack of open PRs that changes apps/vivad. Build on it:
+- PR A: branch `issue-18-decision-memory`, base `queue/5-skip`.
+- PR B: branch `memory-direction-check`, base PR A's branch.
+Say in each body that it's stacked and will be retargeted when the stack merges. PR #4 (entire/session-reader, open, not in your base) adds an Entire checkpoint reader; don't depend on it, but don't conflict with it needlessly.
+
+Hard constraints, from AGENTS.md:
+- The ledger (refs/notes/viva attestations) holds only scores and hashes. Do not put reasoning in it. Memory is a separate store, and transcripts never go into logs.
+- Saving reasoning must be explicit and opt-in by the developer, for example a "save my explanation as project memory" choice after a pass, or a config flag defaulting off. Only passed answers are saved, and the developer can see what's stored.
+- Choose a store that travels with the repo and is easy for agents to find, and justify it in the PR. Options: committed markdown under a folder such as `.viva/memory/`, or a separate notes ref. Agents read files, so plain markdown keyed by file/symbol with the question, the claim and the developer's explanation is likely best. Don't change protected-path rules: `.viva/config.json` and `.viva/checks/` are hard gates, so a memory folder must not trip `viva-config-changed` and must not become a way to bypass it. Check packages/engine/src/pipeline/prechecks.ts.
+- Entire's `brain` plugin isn't installed and you must not install it. Make the memory readable by agents and Entire in general, and if useful add a `viva memory <file>` CLI command, but no hard dependency on Entire.
+- PR B:
+  - Retrieval is deterministic. Find memories touching the changed files before any model call, and with no relevant memory make no extra model call (token efficiency, which Entire's prize measures).
+  - Add one new one-question check file in checks/, e.g. checks/direction.md, rather than growing an existing prompt.
+  - Feed memories as untrusted() data.
+  - Output must go through the existing zod CheckResult schema, so contradictions become ranked claims that can become exam questions like "You told us X was deliberate; this change reverses it. Is that the right direction?".
+  - Add an eval case (evals/cases) for the new behaviour, with one contradicting change and one consistent change, plus a mock-provider path so CI stays offline.
+- Fail open: missing or corrupt memory must never block a push.
+- Windows-safe (node:path).
+- Tests for both PRs.
+- Contract changes go in packages/contracts first, then fixtures/mock. Touch apps/web only in api/client.ts if at all, as Kay and Sophina own the screens.
+
+Rules:
+- Run `pnpm install` and `env -u VIVA_LLM -u GEMINI_API_KEY pnpm check` before each PR; it must pass with no key and no network. Never make live model calls, and never copy any .env.
+- Don't change hard gates or fail-open behaviour. Don't merge anything, and don't watch PRs. Don't kill processes you didn't start.
+- If the work is larger than it looks, ship PR A well and do PR B partially, and say so.
+- End commits with: Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+- End PR bodies with: 🤖 Generated with [Claude Code](https://claude.com/claude-code)
+- In each PR body add a short "Pitch hook" line: what a judge sees in the demo.
+
+Final message: what you built and what's unverified, then for each PR: PR <full URL>, head <SHA>, checks and reviews <state>.
