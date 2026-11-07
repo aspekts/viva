@@ -28,6 +28,7 @@ The Vite dev server proxies `/v1` to the daemon on `127.0.0.1:4317`, so always c
 |---|---|---|
 | `/` | The Fog | Kay |
 | `/?review=<id>` | Exam room for that review | Sophina |
+| `/` then the Exam room tab | The newest review, or an empty state when there are none (PR #38) | Sophina |
 | Add `mock` to either | Same screen with sample data, for example `/?review=x&mock` | |
 
 `git push` prints `/?review=<id>` when a viva is needed, so that link must always open the exam directly.
@@ -81,18 +82,19 @@ All bodies are JSON. Errors are `{ "error": string }`.
 |---|---|---|---|
 | `GET /v1/health` | | `{ ok: true, llm: string }` | ✅ |
 | `POST /v1/reviews` | `ReviewRequest` | `Review` | ✅ Used by the CLI, not the UI |
-| `GET /v1/reviews` | | `Review[]`, newest first | ✅ |
+| `GET /v1/reviews` | | `Review[]`, newest first | ✅ With PR #38, a repeat push moves a review to the front. Use `getLatestReview()` |
 | `GET /v1/reviews/:id` | | `Review` | ✅ |
 | `POST /v1/reviews/:id/answers` | `Answer[]` | `Review` | ✅ |
-| `POST /v1/reviews/:id/skip` | | `Review` | ✅ Not yet in `client.ts` |
-| `GET /v1/fog?repo=<path>` | | `FogMap` | ✅ |
+| `POST /v1/reviews/:id/skip` | | `Review` | ✅ `skipReview(id)` in `client.ts` with PR #39 |
+| `GET /v1/fog?repo=<path>` | | `FogMap` | ✅ `?repo` optional with PR #37 |
 | `GET /v1/reviews/:id/feedback` | | `ReviewFeedback` | 🔜 PR #5 |
 | `GET /v1/reviews/:id/code?file=&start=&end=` | | `ReviewCode` | 🔜 PR #8 |
+| `GET /v1/events` | | Server-sent events, each `data:` is a `VivaEvent` | 🔜 PR #35 |
 
 Notes:
 
 - **Unanswered questions fail.** Send every question in `plan.questions`. A missing or blank answer scores zero, and no retry is offered in the same review.
-- **`?repo` is effectively required for the Fog.** Without it, the daemon maps its own working directory, which is not the repo being pushed. `getFog()` doesn't send it yet. The `repoPath` on a `Review` holds the right value.
+- **Which repo the Fog maps:** on `main`, `?repo` is effectively required, as without it the daemon maps its own working directory. With PR #37, it maps the most recently pushed repo and `getFog()` needs no `?repo`. Before any push, or after a daemon restart, you get `repoPath: null` and no nodes, so show an empty state.
 - **Reviews live in memory.** Restarting the daemon gives a 404 for old IDs, so show a clear "run `git push` again" message.
 
 ### Errors
@@ -100,11 +102,11 @@ Notes:
 | Status | Meaning | On `main` | With PR #5 |
 |---|---|---|---|
 | 404 | Unknown review | ✅ | ✅ With a clearer message |
-| 409 | Not awaiting an exam, or the gate can't be skipped | Returns 500 | ✅ |
+| 409 | Not awaiting an exam, or the gate can't be skipped. With PR #39, also skipping a push that's already allowed | Returns 500 | ✅ |
 | 410 | Feedback expired after a restart | n/a | ✅ |
 | 500 | Anything else | ✅ Includes the raw message | ✅ Generic message only |
 
-Don't depend on the error text. Handle the status code. Answering or skipping can take a few seconds, as grading calls a model, so disable the button while a request is in flight.
+Don't depend on the error text. Handle the status code: with PR #39, `client.ts` throws an `ApiError` with a `status`. Answering or skipping can take a few seconds, as grading calls a model, so disable the button while a request is in flight.
 
 ## Data shapes
 
@@ -165,6 +167,7 @@ Line numbers come from the model, and the daemon can't tell if they point at the
 
 ```ts
 FogMap: {
+  repoPath: string | null; // PR #37. Null means no push seen yet: show an empty state
   generatedAt: string;
   debt: number;       // total comprehension debt. No fixed unit, so show trends
   nodes: FogNode[];
@@ -185,7 +188,7 @@ FogNode: {
 - Mastery fades with time and halves when the code changes, so fog returns on its own.
 - `person` is the Git `user.name`, not a GitHub login. Map colours from that string, and allow for unknown names.
 - Node sizes vary hugely, so use a scale such as `sqrt(size)`.
-- There's no live push yet. To show fog rolling in, poll `/v1/fog` every couple of seconds, and animate the difference between responses.
+- To show fog rolling in, refetch `/v1/fog` and animate the difference between responses. With PR #35, `watch("fog", reload)` tells you when to refetch. Until it lands, poll every couple of seconds.
 
 ### Voice exam 📝
 
@@ -205,13 +208,27 @@ Proposed, so Sophina can change it. The React app talks to ElevenLabs directly, 
 
 `VITE_ELEVENLABS_AGENT_ID` is exposed to the browser, so it must only be a public agent ID. Never put API keys in `apps/web`.
 
+### Live events 🔜 PR #35
+
+```ts
+VivaEvent =
+  | { type: "review"; reviewId: string; stage: ReviewStage; gate: Gate | null }  // created, answered or skipped
+  | { type: "fog"; repoPath: string }  // refetch the fog
+```
+
+- Use `watch("fog" | "review", refresh)` from `client.ts` rather than `EventSource` directly. It returns a stop function, so return that from `useEffect`.
+- `watch` polls every 2 seconds until the stream connects, and whenever it drops. It refetches once on every connect, because missed events aren't replayed. In `?mock` it does nothing.
+- Events only say what changed, so always refetch. They never carry code, questions or answers.
+- `fog` also fires when someone commits to a reviewed repo with no push, checked every 2 seconds while anyone listens.
+- There's still no progress while a review runs.
+
 ## Mock mode
 
 Adding `?mock` loads `fixtures/mock/fog.json`, `fixtures/mock/review.json` and, with PR #8, `fixtures/mock/code.json` through the same schemas as live data. Submitting answers returns a pass.
 
-**Known problem:** the exam room also falls back to mock data when there's no `review` in the URL, even without `?mock`. Opening the Exam room tab with the daemon running shows a fake exam, so don't treat it as real.
+**Known problem on `main`:** the exam room also falls back to mock data when there's no `review` in the URL, even without `?mock`. Opening the Exam room tab with the daemon running shows a fake exam, so don't treat it as real. PR #38 fixes it: with no ID, `getLatestReview()` returns the newest review or `null`, and only `?mock` gives sample data. `?mock&empty` gives `null`.
 
-To test a state, add a fixture, for example `review-failed.json`, and keep it valid against the schema.
+With PR #37, `?mock&empty` loads `fixtures/mock/fog-empty.json` and, with PR #38, an empty Exam room. With PR #39, `?mock&hard` loads `fixtures/mock/review-hard-gate.json`, a review blocked by a hard gate, where skip is refused. To test another state, add a fixture, for example `review-failed.json`, and keep it valid against the schema.
 
 ## Gaps to agree
 
@@ -220,8 +237,8 @@ Marcus to confirm. Until these land, build the UI against the proposed shape beh
 | Gap | Blocks | Proposal |
 |---|---|---|
 | **Code for the exam:** no way to fetch the lines under discussion | Code highlighting | 🔜 PR #8 |
-| **Live progress:** no updates during a review or while fog changes | Fog rolling in live, loading screens | 📝 Server-sent events at `GET /v1/events`. Poll until then |
-| **Latest review:** the Exam room tab has no ID without the URL | Opening the tab directly | 📝 Use the first item from `GET /v1/reviews` |
-| **Which repo:** the UI doesn't know the repo for the Fog | Live Fog | 📝 Take it from the latest review, or a daemon setting |
-| **Skip:** not in `client.ts`, and the reason isn't recorded in the ledger | Skip button | 📝 Add `skipReview(id)` |
+| **Live progress:** no updates during a review or while fog changes | Fog rolling in live, loading screens | 🔜 PR #35 for fog and review changes. Progress during a review is still open |
+| **Latest review:** the Exam room tab has no ID without the URL | Opening the tab directly | 🔜 PR #38: `getLatestReview()`, the first item from `GET /v1/reviews` |
+| **Which repo:** the UI doesn't know the repo for the Fog | Live Fog | 🔜 PR #37: the daemon remembers the last pushed repo, in memory |
+| **Skip:** not in `client.ts`, and the reason isn't recorded in the ledger | Skip button | 🔜 PR #39 adds `skipReview(id)`. The ledger still doesn't record skips, by design, as the fog stays |
 | **Debt over time:** only the current total exists | A trend chart | 📝 Stretch, with Tiger Data |
