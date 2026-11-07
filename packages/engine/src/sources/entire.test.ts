@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { defaults } from "../config.js";
 import { MockProvider } from "../llm/mock.js";
 import { CHARS_PER_TOKEN, MeteredProvider, untrusted, type LlmProvider } from "../llm/provider.js";
@@ -10,7 +10,7 @@ import { appendAttestations, readLedger } from "../ledger/notes.js";
 import { parseCheck, sessionTokenBudget } from "../pipeline/checks.js";
 import { startReview, submitAnswers, type ReviewDeps } from "../pipeline/review.js";
 import { fixtureRepo, type FileMap } from "../testing.js";
-import { entireSource, fitSession } from "./entire.js";
+import { boundedLines, entireSource, fitSession, PassageBuffer } from "./entire.js";
 import { grepBlastRadius } from "./graph.js";
 import { resolveSession, type SessionSource } from "./session.js";
 
@@ -72,6 +72,62 @@ const trailer = (...ids: string[]) => `change\n\n${ids.map((id) => `Entire-Check
 const repoWithHead = () => fixtureRepo({ "a.ts": "1\n" }, { "a.ts": "2\n" });
 
 describe("entireSource", () => {
+  it("bounds retained candidates while ingesting a large checkpoint", async () => {
+    const { repo } = repoWithHead();
+    // 24 MB of distinct assistant text, far beyond the 350-character output budget.
+    const full = Array.from({ length: 12_000 }, (_, i) =>
+      JSON.stringify(fullAssistant(text(`Passage ${i} ${"x".repeat(2_000)}`)))).join("\n");
+    storeCheckpoint(repo, ID_A, session(full, { "0/prompt.txt": "Ask" }));
+    const head = commit(repo, "a.ts", trailer(ID_A));
+    let peakRetained = 0;
+    const add = PassageBuffer.prototype.add;
+    const spy = vi.spyOn(PassageBuffer.prototype, "add").mockImplementation(function (this: PassageBuffer, passage, index) {
+      add.call(this, passage, index);
+      peakRetained = Math.max(peakRetained, this.retainedChars);
+    });
+    try {
+      const result = await entireSource.load(repo, head, { maxTokens: 100 });
+      expect(peakRetained).toBeGreaterThan(0);
+      expect(peakRetained).toBeLessThanOrEqual(100 * CHARS_PER_TOKEN + 4_002);
+      expect(result?.transcript).toContain("Passage 11999");
+      expect((result?.intent?.length ?? 0) + (result?.transcript?.length ?? 0)).toBeLessThanOrEqual(350);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("preserves normal checkpoint output including promotion and overlapping passages", async () => {
+    const { repo } = repoWithHead();
+    const full = lines(
+      fullAssistant(thinking("Use an idempotent retry."), edit("/repo/a.ts")),
+      fullAssistant(text("a.ts needs a retry.")),
+      fullAssistant(text("Done.")),
+      fullAssistant(text("Done.")),
+    );
+    storeCheckpoint(repo, ID_A, session(full, { "0/prompt.txt": "Add retries" }));
+    const head = commit(repo, "a.ts", trailer(ID_A));
+    expect(await entireSource.load(repo, head, { files: ["a.ts"], maxTokens: 1_000 })).toEqual(
+      fitSession(["Add retries"], [
+        { text: "Use an idempotent retry.", relevance: 4 },
+        { text: "[Edit] a.ts", relevance: 4 },
+        { text: "a.ts needs a retry.", relevance: 3 },
+        { text: "Done.", relevance: 1 },
+      ], 1_000),
+    );
+  });
+
+  it("skips oversized records without losing checkpoint offsets or the next record", async () => {
+    const { repo } = repoWithHead();
+    const full = lines(
+      fullAssistant(text("Earlier")),
+      fullAssistant(text("x".repeat(300_000))),
+      fullAssistant(text("Readable")),
+    );
+    storeCheckpoint(repo, ID_A, session(full, { "0/prompt.txt": "Ask" }, { checkpoint_transcript_start: 1 }));
+    const head = commit(repo, "a.ts", trailer(ID_A));
+    expect(await entireSource.load(repo, head)).toMatchObject({ intent: "Ask", transcript: "Readable" });
+  });
+
   it("reads the prompts and reasoning for a commit, and leaves tool output behind", async () => {
     const { repo } = repoWithHead();
     const full = lines(
@@ -235,6 +291,38 @@ describe("entireSource", () => {
       intent: "Ask",
       transcript: "Shared turn\n\nNew turn",
     });
+  });
+});
+
+describe("bounded transcript ingestion", () => {
+  it("discards a huge unterminated line chunk by chunk, then resumes with UTF-8 and CRLF", async () => {
+    async function* chunks() {
+      for (let i = 0; i < 10_000; i++) yield Buffer.alloc(1_024, 120);
+      yield Buffer.from("\nfirst\r");
+      yield Buffer.from("\n☃").subarray(0, 2);
+      yield Buffer.from("\n☃").subarray(2);
+    }
+    const seen: [string, number][] = [];
+    await boundedLines(chunks(), (line, index) => seen.push([line, index]), 16);
+    expect(seen).toEqual([["first", 1], ["☃", 2]]);
+  });
+
+  it("deduplicates at the original position when pending reasoning arrives after a tool", () => {
+    const buffer = new PassageBuffer(350);
+    buffer.add({ text: "[Edit] a.ts", relevance: 4 }, 2);
+    buffer.add({ text: "Other", relevance: 1 }, 1);
+    buffer.add({ text: "[Edit] a.ts", relevance: 4 }, 0);
+    expect(buffer.passages.map((passage) => passage.text)).toEqual(["[Edit] a.ts", "Other"]);
+  });
+
+  it("bounds the count of tiny passages and retains the latest on a relevance tie", () => {
+    const buffer = new PassageBuffer(350);
+    for (let i = 0; i < 20_000; i++) {
+      buffer.add({ text: String.fromCodePoint(0x1000 + i), relevance: 1 }, buffer.nextIndex());
+      expect(buffer.retainedChars).toBeLessThanOrEqual(354);
+    }
+    expect(buffer.passages.length).toBeLessThanOrEqual(118);
+    expect(buffer.passages.at(-1)?.text).toBe(String.fromCodePoint(0x1000 + 19_999));
   });
 });
 

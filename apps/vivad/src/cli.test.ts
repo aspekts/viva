@@ -3,6 +3,7 @@ import { Review, ReviewFeedback } from "@viva/contracts";
 import feedback from "../../../fixtures/mock/feedback.json";
 import sample from "../../../fixtures/mock/review.json";
 
+vi.mock("node:child_process", async (original) => ({ ...await original<typeof import("node:child_process")>(), execFileSync: vi.fn(() => "test") }));
 vi.mock("open", () => ({ default: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("./terminal.js", () => ({ pushContext: vi.fn(), controllingTerminal: vi.fn() }));
 vi.mock("./exam.js", () => ({ runExam: vi.fn() }));
@@ -10,7 +11,7 @@ vi.mock("./feedback.js", async (original) => ({ ...await original<typeof import(
 
 import open from "open";
 import { gate, main, presentReview } from "./cli.js";
-import { ApiError, DaemonClient } from "./client.js";
+import { ApiError, DaemonClient, SubmissionTimeoutError } from "./client.js";
 import { pushContext, controllingTerminal } from "./terminal.js";
 import { runExam } from "./exam.js";
 import { formatFeedback, handToAgent } from "./feedback.js";
@@ -62,6 +63,23 @@ describe("CLI gate", () => {
     const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
     expect(await gate(client)).toBe(0);
     expect(warning).toHaveBeenCalledWith(expect.stringContaining("skipped"));
+  });
+
+  it.each([
+    [new SubmissionTimeoutError(), 1],
+    [new Error("connection refused"), 0],
+    [new ApiError(500, "internal error"), 0],
+    [new ApiError(409, "submission in progress"), 1],
+  ])("handles submission failures without treating slow grading as a pass", async (failure, expected) => {
+    vi.spyOn(client, "start").mockResolvedValue(pending);
+    vi.mocked(pushContext).mockReturnValue({ terminal: true, openBrowser: false });
+    vi.mocked(controllingTerminal).mockReturnValue({} as NonNullable<ReturnType<typeof controllingTerminal>>);
+    vi.mocked(runExam).mockRejectedValue(failure);
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(await gate(client)).toBe(expected);
+    expect(client.start).toHaveBeenCalled();
+    if (expected === 1) expect(error).toHaveBeenCalledWith(expect.stringContaining("retry git push"));
   });
 
   it("blocks a hard gate and never enters an exam", async () => {

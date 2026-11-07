@@ -1,11 +1,11 @@
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Review } from "@viva/contracts";
 import { allowsPush } from "@viva/engine";
 import open from "open";
-import { ApiError, DaemonClient } from "./client.js";
+import { ApiError, DaemonClient, SubmissionTimeoutError } from "./client.js";
 import { runExam } from "./exam.js";
 import { formatFeedback, handToAgent } from "./feedback.js";
 import { controllingTerminal, pushContext } from "./terminal.js";
@@ -81,7 +81,7 @@ export async function gate(client = new DaemonClient()): Promise<number> {
   try {
     return await presentReview(review, client);
   } catch (error) {
-    if (error instanceof ApiError && error.status < 500) {
+    if (error instanceof SubmissionTimeoutError || (error instanceof ApiError && error.status < 500)) {
       console.error(`viva: push blocked (${error.message}); retry git push to refresh the review`);
       return 1;
     }
@@ -132,7 +132,16 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
   return command ? 1 : 0;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+/** Resolve both sides, including macOS /tmp and symlinked checkouts. */
+export function isEntrypoint(argvPath: string | undefined, moduleUrl = import.meta.url): boolean {
+  if (!argvPath) return false;
+  const canonical = (path: string) => {
+    try { return realpathSync(path); } catch { return resolve(path); }
+  };
+  return canonical(argvPath) === canonical(fileURLToPath(moduleUrl));
+}
+
+if (isEntrypoint(process.argv[1])) {
   try { process.exitCode = await main(); }
   catch (error) { console.error(`viva: ${(error as Error).message}`); process.exitCode = 1; }
 }

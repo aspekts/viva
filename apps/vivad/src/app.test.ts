@@ -3,14 +3,17 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-import { Review, ReviewCode, ReviewFeedback, VivaEvent } from "@viva/contracts";
+import { FogMap, Review, ReviewCode, ReviewFeedback, VivaEvent } from "@viva/contracts";
 import { fixtureRepo, MockProvider, type LlmProvider } from "@viva/engine";
+import * as engine from "@viva/engine";
+import * as decisions from "./decisions.js";
 import { createApp } from "./app.js";
 import { decisionIdentity } from "./decisions.js";
 
 const repos: string[] = [];
 // Retries without blocking, as Windows locks a repo while a fog check's git process runs in it.
 afterEach(async () => {
+  vi.restoreAllMocks();
   await Promise.all(repos.splice(0).map((repo) => rm(repo, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 })));
 });
 
@@ -93,6 +96,59 @@ describe("vivad", () => {
       post(app, `/v1/reviews/${review.id}/answers`, payload),
     ]);
     expect(results.map((r) => r.status).sort()).toEqual([200, 409]);
+  });
+
+  it("does not append attestations when the receipt write fails, then retries once", async () => {
+    const app = createApp(new MockProvider());
+    const request = fixture();
+    const review = await start(app, request);
+    const dir = join(request.repoPath, ".git", "viva-decisions");
+    writeFileSync(dir, "block receipt directory creation");
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const payload = review.plan!.questions.map((q) => ({ questionId: q.id, mode: "typed", transcript: "behaviour" }));
+    expect((await post(app, `/v1/reviews/${review.id}/answers`, payload)).status).toBe(500);
+    expect(await engine.readLedger(request.repoPath)).toEqual([]);
+    expect((await start(app, request)).stage).toBe("awaiting-exam");
+    rmSync(dir);
+    const completed = await answer(app, review, "behaviour");
+    const ledger = await engine.readLedger(request.repoPath);
+    expect(ledger).toHaveLength(review.plan!.questions.length);
+    expect((await post(app, `/v1/reviews/${review.id}/answers`, payload)).status).toBe(409);
+    expect(await engine.readLedger(request.repoPath)).toEqual(ledger);
+    expect((await start(createApp(new MockProvider()), request)).gate).toEqual(completed.gate);
+    log.mockRestore();
+  });
+
+  it("retains a durable decision and never replays the ledger after an append failure", async () => {
+    const app = createApp(new MockProvider());
+    const request = fixture();
+    const review = await start(app, request);
+    const append = vi.spyOn(engine, "appendAttestations").mockRejectedValue(new Error("ledger unavailable"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const payload = review.plan!.questions.map((q) => ({ questionId: q.id, mode: "typed", transcript: "no idea" }));
+    expect((await post(app, `/v1/reviews/${review.id}/answers`, payload)).status).toBe(500);
+    expect((await start(app, request)).gate?.reason).toBe("exam-failed");
+    expect((await post(app, `/v1/reviews/${review.id}/answers`, payload)).status).toBe(409);
+    expect((await start(createApp(new MockProvider()), request)).gate?.reason).toBe("exam-failed");
+    expect(append).toHaveBeenCalledTimes(1);
+  });
+
+  it("describes in-progress submissions accurately for both answers and skip", async () => {
+    const app = createApp(new MockProvider());
+    const review = await start(app, fixture());
+    const write = decisions.writeDecision;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const receipt = vi.spyOn(decisions, "writeDecision").mockImplementation(async (review) => { await held; await write(review); });
+    const submission = answer(app, review, "behaviour");
+    try {
+      await vi.waitFor(() => expect(receipt).toHaveBeenCalled());
+      for (const action of ["answers", "skip"]) {
+        const response = await post(app, `/v1/reviews/${review.id}/${action}`, action === "answers" ? [] : {});
+        expect(response.status).toBe(409);
+        expect(await response.json()).toEqual({ error: "review submission is already in progress" });
+      }
+    } finally { release(); await submission; }
   });
 
   it("persists explicit skip-with-debt without recording mastery", async () => {
@@ -342,6 +398,17 @@ describe("vivad", () => {
       await new Promise((resolve) => setTimeout(resolve, 200));
     });
 
+    it("tells the Fog to refetch when a push switches back to an unchanged repo", async () => {
+      const app = createApp(new MockProvider(), NO_FOG_POLL);
+      const first = fixture();
+      await answer(app, await start(app, first), "behaviour");
+      await start(app, fixture());
+      const events = await listen(app);
+      const again = await start(app, first);
+      expect(await events.until((e) => e.type === "fog")).toEqual({ type: "fog", repoPath: again.request.repoPath });
+      await events.close();
+    });
+
     it("cleans up a listener that disconnects before the stream opens", async () => {
       const set = vi.spyOn(globalThis, "setInterval");
       const clear = vi.spyOn(globalThis, "clearInterval");
@@ -371,6 +438,78 @@ describe("vivad", () => {
       // Lets the last check's git exit, as Windows can't delete a directory a process runs in.
       await new Promise((resolve) => setTimeout(resolve, 200));
     });
+  });
+
+  describe("which repo the Fog maps", () => {
+    const fog = async (app: ReturnType<typeof createApp>, query = "") => {
+      const response = await app.request(`/v1/fog${query}`);
+      expect(response.status).toBe(200);
+      return FogMap.parse(await response.json());
+    };
+
+    it("returns a clear empty state before any push, instead of the daemon's own folder", async () => {
+      expect(await fog(createApp(new MockProvider()))).toMatchObject({ repoPath: null, debt: 0, nodes: [] });
+    });
+
+    it("maps the most recently pushed repo with no ?repo, and ?repo still wins", async () => {
+      const app = createApp(new MockProvider());
+      const first = await start(app, fixture());
+      expect(await fog(app)).toMatchObject({ repoPath: first.request.repoPath, nodes: [{ file: "src/pay.ts" }] });
+      const second = await start(app, fixture("export const other = charge();\n", "lib/other.ts"));
+      const map = await fog(app);
+      expect(map.repoPath).toBe(second.request.repoPath);
+      expect(map.nodes.map((n) => n.file)).toEqual(["lib/other.ts"]);
+      expect((await fog(app, `?repo=${encodeURIComponent(first.request.repoPath)}`)).repoPath).toBe(first.request.repoPath);
+    });
+
+    it("remembers a repo again when a decided review is pushed again", async () => {
+      const app = createApp(new MockProvider());
+      const first = fixture();
+      await answer(app, await start(app, first), "behaviour");
+      const second = await start(app, fixture());
+      expect((await fog(app)).repoPath).toBe(second.request.repoPath);
+      const again = await start(app, first);
+      expect((await fog(app)).repoPath).toBe(again.request.repoPath);
+    });
+
+    it("forgets a repo that has gone", async () => {
+      const app = createApp(new MockProvider());
+      const request = fixture();
+      await start(app, request);
+      rmSync(request.repoPath, { recursive: true, force: true });
+      expect(await fog(app)).toMatchObject({ repoPath: null, nodes: [] });
+    });
+  });
+
+  it("lists reviews newest first, counting a repeat push of a decided change as new", async () => {
+    const app = createApp(new MockProvider());
+    const list = async () => Review.array().parse(await (await app.request("/v1/reviews")).json()).map((r) => r.id);
+    expect(await list()).toEqual([]);
+    const first = fixture();
+    const a = await start(app, first);
+    await answer(app, a, "behaviour");
+    const b = await start(app, fixture());
+    expect(await list()).toEqual([b.id, a.id]);
+    await start(app, first);
+    expect(await list()).toEqual([a.id, b.id]);
+  });
+
+  it("refuses to skip a push that is already allowed, so a pass isn't overwritten with debt", async () => {
+    const app = createApp(new MockProvider());
+    const request = fixture();
+    const review = await start(app, request);
+    await answer(app, review, "behaviour");
+    expect((await post(app, `/v1/reviews/${review.id}/skip`, {})).status).toBe(409);
+    expect((await start(createApp(new MockProvider()), request)).gate?.reason).toBe("exam-passed");
+  });
+
+  it("allows skipping a failed exam", async () => {
+    const app = createApp(new MockProvider());
+    const review = await start(app, fixture());
+    await answer(app, review, "I don't know");
+    const skipped = await post(app, `/v1/reviews/${review.id}/skip`, {});
+    expect(skipped.status).toBe(200);
+    expect(Review.parse(await skipped.json()).gate?.reason).toBe("skipped-with-debt");
   });
 
   it("keeps error text out of the log and the response", async () => {
