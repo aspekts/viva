@@ -47,6 +47,8 @@ The daemon deduplicates reviews by a SHA-256 identity of canonical repository pa
 
 `GET /v1/reviews/:id/code` shows the UI the lines under discussion. It serves only files in the review's commit range, from the head commit's object store rather than the working tree, and only to loopback hosts. Code stays out of logs, the ledger and decision receipts.
 
+`GET /v1/events` is a server-sent event stream, so the UI needn't poll. Events only say that a review or a repo's fog changed, and the UI refetches. While someone is listening, the daemon checks each reviewed repo's HEAD and `refs/notes/viva` every 2 seconds, as a commit changes the fog without any review. There's no stage-by-stage progress during a review, and events aren't replayed after a reconnect.
+
 ## Design rules
 
 - **Fail open.** If the daemon is down, the push goes through with a warning. Reliability beats coverage, as in HRT's Blobby talk.
