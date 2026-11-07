@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-import { Review, ReviewCode, ReviewFeedback, VivaEvent } from "@viva/contracts";
+import { FogMap, Review, ReviewCode, ReviewFeedback, VivaEvent } from "@viva/contracts";
 import { MockProvider } from "@viva/engine";
 import { fixtureRepo } from "../../../packages/engine/src/testing.js";
 import { createApp } from "./app.js";
@@ -356,6 +356,47 @@ describe("vivad", () => {
       clear.mockRestore();
       // Lets the last check's git exit, as Windows can't delete a directory a process runs in.
       await new Promise((resolve) => setTimeout(resolve, 200));
+    });
+  });
+
+  describe("which repo the Fog maps", () => {
+    const fog = async (app: ReturnType<typeof createApp>, query = "") => {
+      const response = await app.request(`/v1/fog${query}`);
+      expect(response.status).toBe(200);
+      return FogMap.parse(await response.json());
+    };
+
+    it("returns a clear empty state before any push, instead of the daemon's own folder", async () => {
+      expect(await fog(createApp(new MockProvider()))).toMatchObject({ repoPath: null, debt: 0, nodes: [] });
+    });
+
+    it("maps the most recently pushed repo with no ?repo, and ?repo still wins", async () => {
+      const app = createApp(new MockProvider());
+      const first = await start(app, fixture());
+      expect(await fog(app)).toMatchObject({ repoPath: first.request.repoPath, nodes: [{ file: "src/pay.ts" }] });
+      const second = await start(app, fixture("export const other = charge();\n", "lib/other.ts"));
+      const map = await fog(app);
+      expect(map.repoPath).toBe(second.request.repoPath);
+      expect(map.nodes.map((n) => n.file)).toEqual(["lib/other.ts"]);
+      expect((await fog(app, `?repo=${encodeURIComponent(first.request.repoPath)}`)).repoPath).toBe(first.request.repoPath);
+    });
+
+    it("remembers a repo again when a decided review is pushed again", async () => {
+      const app = createApp(new MockProvider());
+      const first = fixture();
+      await answer(app, await start(app, first), "behaviour");
+      const second = await start(app, fixture());
+      expect((await fog(app)).repoPath).toBe(second.request.repoPath);
+      const again = await start(app, first);
+      expect((await fog(app)).repoPath).toBe(again.request.repoPath);
+    });
+
+    it("forgets a repo that has gone", async () => {
+      const app = createApp(new MockProvider());
+      const request = fixture();
+      await start(app, request);
+      rmSync(request.repoPath, { recursive: true, force: true });
+      expect(await fog(app)).toMatchObject({ repoPath: null, nodes: [] });
     });
   });
 });
