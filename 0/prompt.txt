@@ -1,0 +1,51 @@
+Delegated task node:delegated-task:command%3Amcp%3Af9010e19-eb5e-4ec0-a950-6853cf3b280f%3Adelegate-task%3A637afc20-e84a-42bb-bf1b-1afa9c4ac6e8 (#18 + memory layer (Opus)) [completed]:
+Both PRs are open and stacked: PR A on `queue/5-skip`, PR B on PR A. Both bodies say they're stacked and will be retargeted when the stack merges. I shipped PR B in full, not partially. Offline `pnpm check` passed (no key, no network) before each PR: 134 tests and 6/6 evals for A, 144 tests and 9/9 evals for B. No live model calls were made.
+
+**PR A (#18): save spoken reasoning**
+- **Saving is opt-in.** After a passed exam the developer presses `m` in the terminal exam or runs `pnpm viva remember <reviewId>`. The web side has `saveMemory(id)` in `apps/web/src/api/client.ts` and a mock fixture.
+- **What's kept:** only passed answers, and only about files the push changed. The daemon holds the answers in memory until the developer chooses, so a restart forgets them.
+- **The store** is committed markdown at `.viva/memory/<path>.md`, holding the decision, the question and the developer's explanation. I chose it over a notes ref because agents find it by path or grep, it travels with normal pushes, and Entire captures it with the commit. The PR explains this.
+- **The developer sees what's stored:** the save prints exactly what it wrote, and nothing is shared until they commit the file.
+- **Agents can read it:** `pnpm viva memory <file>` prints it as untrusted data without the daemon, and `AGENTS.md` now tells agents to read it before changing a file.
+- **Constraints held:**
+  - A test checks that `refs/notes/viva` holds no explanation text after a save.
+  - `.viva/memory/` doesn't trip `viva-config-changed`, and a push that also touches `.viva/config.json` or `.viva/checks/` is still a hard gate.
+  - Model output can't choose where memory is written.
+  - Missing or damaged memory reads as empty.
+  - A failed save never changes the verdict.
+
+**PR B: direction check**
+- **Lookup without a model:** before any model call, the review reads the memory for the changed files from git, at both the start and the end of the push. Memory that looks like instructions to the reviewer is dropped.
+- **New check:** `checks/direction.md` receives that memory inside `untrusted()`. When no memory is relevant it is skipped with no model call; the eval shows 3 calls instead of 4.
+- **Output** goes through the existing `CheckResult` schema and becomes questions like "You told us X was deliberate; this change reverses it. Is that the right direction, and why?". These questions are asked even of someone who has already proven they understand the file.
+- **Evals** run on the mock provider: a reversal, a consistent change, and the same reversal with no memory. The original six cases kept their token counts.
+
+**Not verified**
+- **Gemini quality:** the direction prompt's real accuracy is unmeasured, because the mock only proves the plumbing.
+- **Windows console:** not tried by hand, though Windows CI passed on PR A.
+- **Web UI:** there's no save button yet, since those screens are Kay's and Sophina's.
+- **Flaky exam test:** an existing test, "takes typed answers question-by-question…", failed once in three full runs on PR B. It passed alone three times and in the other two full runs, and looks like a timing issue rather than this change.
+- **Merging main:** main has moved on since `queue/5-skip`; #4 and the evals matrix are merged there. Rebasing onto it will need small hand merges in `evals/run.ts`, `review.ts` and `checks.ts`.
+
+PR https://github.com/aspekts/viva/pull/45, head 27141f714a8f9cf77c1bb219480a01a755f47340, checks and reviews: CI passed on ubuntu, windows and macos (CodeRabbit skipped); no reviews yet.
+PR https://github.com/aspekts/viva/pull/46, head 775bc06a3e4720bbf5ad789467bd178581c4a221, checks and reviews: CI queued on ubuntu, windows and macos; no reviews yet.
+
+---
+
+Delegated task node:delegated-task:command%3Amcp%3Af9010e19-eb5e-4ec0-a950-6853cf3b280f%3Adelegate-task%3A4b3769e3-6248-42f4-827b-920af6a2ad24 (Review #47 empty-exam fix (Sol)) [completed]:
+**MERGE AFTER FIXES** — reviewed PR #47 at `26d0c1e`.
+
+**Blocking:** [decisions.ts:27](/Users/marcus/.t3/worktrees/viva/t3-93b9c6b2/apps/vivad/src/decisions.ts:27), [app.ts:59](/Users/marcus/.t3/worktrees/viva/t3-93b9c6b2/apps/vivad/src/app.ts:59): legacy zero-question passes remain reusable. Reproduced creating an empty-exam `endorse/exam-passed` receipt with main’s code, then restarting on the PR head: the same request returned that pass with **zero model calls**. Receipts contain no coverage evidence. Invalidate legacy successful exam receipts using a version/policy marker, preserve failed decisions, and add an upgrade regression test.
+
+Brief notes:
+
+- Fresh empty/unknown-only plans are stopped. Fail-open matches project policy: the hook permits pushing with a warning. Two fresh retries each reran planning, returned 500, and left **no mastery, earned-trust decision, receipt, or retained review**.
+- Partial coverage remains at [plan.ts:25](/Users/marcus/.t3/worktrees/viva/t3-93b9c6b2/packages/engine/src/pipeline/plan.ts:25): one question covering only one of two selected risky claims can produce `exam-passed`. This is a pre-existing coverage limitation, **nonblocking for the narrowly scoped zero-question fix**. Requiring coverage of every selected claim merits follow-up.
+- No legitimate existing caller requires empty aggregation/submission. Missing answers to actual questions still reject deterministically; offline evals pass.
+
+Validation:
+
+- `pnpm install`: passed.
+- `env -u VIVA_LLM -u GEMINI_API_KEY pnpm check`: **failed twice**, 136/137 tests passed. Unchanged `apps/vivad/src/exam.test.ts:33` concatenates the first answer into the second; passes in isolation. Typechecking passed; evals passed separately.
+- All five new test cases fail with the production fix reverted in a temporary copy.
+- No keys, live calls, or `.env` loading. Working tree unchanged.
