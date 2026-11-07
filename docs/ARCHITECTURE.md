@@ -46,7 +46,7 @@ Each step stops the review if it can decide, so the cheapest step wins.
 ## Known gaps
 
 - The Entire adapter and entire-graph are stubs. The session source returns nothing, and blast radius uses `git grep`.
-- `pnpm evals` is offline; `pnpm evals:live` measures Gemini claims. The first live matrix run was rate-limited before clean cases; see [EVALS.md](EVALS.md) for partial results and limitations.
+- `pnpm evals` is offline; `pnpm evals:live` measures Gemini claims. The corpus is small and hand-written, and Flash-Lite versus Flash is still unmeasured; see [EVALS.md](EVALS.md).
 - The fog is per file, with blast radius at 0. Symbol-level needs entire-graph.
 - Reviews are held in memory, so restarting the daemon loses them.
 - Ledger notes aren't pushed automatically yet.

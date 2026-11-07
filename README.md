@@ -41,8 +41,9 @@ Commit a change in that repo and `git push`. Risky changes pause the push until 
 | `pnpm check` | Runs typecheck, tests and evals. Run this before opening a PR |
 
 See [the recorded live eval results and grading method](docs/EVALS.md). Use
-`pnpm evals:live --report docs/EVALS.md` to write a fresh report. Live failures and
-incomplete runs exit nonzero after reporting; mock quality scores do not gate CI.
+`pnpm evals:live --report docs/EVALS.md` to write a fresh report, or `--exam` for end-to-end
+reviews. Live failures and incomplete runs exit nonzero after reporting, and a 429 exits with
+code 75; mock quality scores do not gate CI.
 
 ## Who owns what
 
