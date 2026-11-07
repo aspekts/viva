@@ -234,7 +234,7 @@ function selectPassages(passages: Passage[], room: number): string | null {
 }
 
 export function fitSession(prompts: string[], passages: Passage[], maxTokens: number): SessionContext | null {
-  const maxChars = maxTokens * CHARS_PER_TOKEN;
+  const maxChars = Math.floor(maxTokens * CHARS_PER_TOKEN);
   const wanted = prompts.reduce((sum, p) => sum + p.length + PROMPT_SEPARATOR.length, 0);
   const intentRoom = passages.length > 0 ? Math.min(wanted, Math.floor(maxChars * INTENT_SHARE)) : Math.min(wanted, maxChars);
   const separators = PROMPT_SEPARATOR.length * Math.max(0, prompts.length - 1);

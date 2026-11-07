@@ -21,7 +21,8 @@ export interface LlmProvider {
   complete<T>(request: LlmRequest<T>): Promise<LlmResult<T>>;
 }
 
-export const CHARS_PER_TOKEN = 4;
+/** Measured on Gemini against a real diff and transcript, which ran denser than the usual 4. */
+export const CHARS_PER_TOKEN = 3.5;
 export const estimateTokens = (text: string): number => Math.ceil(text.length / CHARS_PER_TOKEN);
 
 export class BudgetExceededError extends Error {}
