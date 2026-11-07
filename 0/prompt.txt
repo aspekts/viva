@@ -1,0 +1,29 @@
+Update on pull request #39 (https://github.com/aspekts/viva/pull/39), which T3 Code is watching for you:
+- Checks failed on 8b995c7:
+  - check (windows-latest) https://github.com/aspekts/viva/actions/runs/42417726999/job/128539336026
+
+Look into each item and act on it as your task requires. This PR stays linked and watched, so do not link, watch, or list it again. End your turn when you are done, and T3 Code wakes you on the next change. When you hand the work back to the user, call unwatch_pull_request first so the thread returns to their inbox.
+
+---
+
+Update on pull request #39 (https://github.com/aspekts/viva/pull/39), which T3 Code is watching for you:
+- 1 new comment:
+  - coderabbitai: "> [!IMPORTANT] > ## Review skipped > > Auto reviews are disabled on base/target branches other than the default branch. > > > > Please check the settings in the CodeRabbit UI or the `.coderabbit.ya..." https://github.com/aspekts/viva/pull/39#issuecomment-6713402113
+
+Look into each item and act on it as your task requires. This PR stays linked and watched, so do not link, watch, or list it again. End your turn when you are done, and T3 Code wakes you on the next change. When you hand the work back to the user, call unwatch_pull_request first so the thread returns to their inbox.
+
+---
+
+Update on pull request #35 (https://github.com/aspekts/viva/pull/35), which T3 Code is watching for you:
+- 1 new comment:
+  - coderabbitai: "> [!IMPORTANT] > ## Review skipped > > Auto reviews are disabled on base/target branches other than the default branch. > > > > Please check the settings in the CodeRabbit UI or the `.coderabbit.ya..." https://github.com/aspekts/viva/pull/35#issuecomment-6713339831
+
+Look into each item and act on it as your task requires. This PR stays linked and watched, so do not link, watch, or list it again. End your turn when you are done, and T3 Code wakes you on the next change. When you hand the work back to the user, call unwatch_pull_request first so the thread returns to their inbox.
+
+---
+
+Update on pull request #35 (https://github.com/aspekts/viva/pull/35), which T3 Code is watching for you:
+- Checks failed on 6b7be11:
+  - check (windows-latest) https://github.com/aspekts/viva/actions/runs/42418139340/job/128540564311
+
+Look into each item and act on it as your task requires. This PR stays linked and watched, so do not link, watch, or list it again. End your turn when you are done, and T3 Code wakes you on the next change. When you hand the work back to the user, call unwatch_pull_request first so the thread returns to their inbox.
