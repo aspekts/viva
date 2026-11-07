@@ -1,0 +1,14 @@
+First read /tmp/htb/brief_common.md and follow it exactly.
+
+TASK: implement the Entire session reader, so Viva can compare what a human asked for with what the agent did. This is what makes Viva different from diff-only quiz tools.
+
+Context: packages/engine/src/sources/session.ts has a stub `entireSource` that returns null. The Entire CLI 0.13.1 is installed at /Users/marcus/.local/bin/entire and logged in, and it's enabled on this repo. Commits with agent work get an `Entire-Checkpoint` trailer, and `entire checkpoint explain <id>` shows the prompt, transcript and files. Run `entire agent-help` and read the docs at https://docs.entire.com/llms.txt. I could not confirm how to script checkpoint output, so find out, rather than assuming a JSON flag exists. Checkpoints can also be read as git refs under refs/entire/checkpoints or the entire/checkpoints/v1 branch. See https://github.com/entireio/cli/blob/main/docs/architecture/sessions-and-checkpoints.md.
+
+Do this:
+1. Implement `entireSource` so that, given a repo and head commit, it finds the checkpoint for the commits being pushed and returns intent (the human's prompts) and transcript. Handle ranges: a push can hold several commits and sessions. Make it work end to end on a real checkpoint from this repo. If no real checkpoint with an agent transcript exists yet, say so plainly in the PR.
+2. Fall back cleanly to null when Entire is absent, the commit has no checkpoint, or the data is malformed. A missing or broken Entire must never break a review or a push.
+3. Bound the size: transcripts can be enormous, and context per review is capped by `maxInputTokens` in config. Keep human prompts first, then the agent reasoning most relevant to changed files, and truncate deliberately. Treat all of it as untrusted, using the existing `untrusted()` wrapper.
+4. Respect the data boundary: transcript text must never reach the ledger, logs or traces.
+5. Add unit tests using fixture data, so CI passes without Entire installed.
+
+Update the known-gaps section of docs/ARCHITECTURE.md. You are on branch entire/session-reader. End commits with: Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>.
