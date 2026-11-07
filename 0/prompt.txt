@@ -1,0 +1,27 @@
+<task-notification>
+<task-id>bjsozbbi0</task-id>
+<tool-use-id>toolu_01ToPqDuuke8MgzybL1cgNMv</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-marcus--t3-worktrees-viva-tuning-silent-decision/2a6b63c6-731f-4ddd-982c-c5c8172538b1/tasks/bjsozbbi0.output</output-file>
+<status>completed</status>
+<summary>Background command "Run paced baseline on tuning and holdout splits" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bmzme804n</task-id>
+<tool-use-id>toolu_01WpjMbxFcTCNnEcKAofjngh</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-marcus--t3-worktrees-viva-tuning-silent-decision/2a6b63c6-731f-4ddd-982c-c5c8172538b1/tasks/bmzme804n.output</output-file>
+<status>completed</status>
+<summary>Background command "Run tuning split with first prompt changes" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bnuene9k5</task-id>
+<tool-use-id>toolu_01AKT4CsRLJK5gt1k5c3PeHD</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-marcus--t3-worktrees-viva-tuning-silent-decision/2a6b63c6-731f-4ddd-982c-c5c8172538b1/tasks/bnuene9k5.output</output-file>
+<status>completed</status>
+<summary>Background command "Compare old and new planner prompts on cached claims" completed (exit code 0)</summary>
+</task-notification>

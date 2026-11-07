@@ -1,0 +1,50 @@
+{
+  "cli_version": "0.13.1",
+  "checkpoint_id": "01M6VVGW7HJRHZ1ZEWY4002X8B",
+  "strategy": "manual-commit",
+  "branch": "tuning/silent-decision",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "checks/failure-path.md",
+    "checks/silent-decision.md",
+    "evals/exam.ts",
+    "evals/matrix.test.ts",
+    "evals/matrix.ts",
+    "evals/run.ts",
+    "packages/engine/src/index.ts",
+    "packages/engine/src/pipeline/checks.ts",
+    "packages/engine/src/pipeline/pipeline.test.ts",
+    "packages/engine/src/pipeline/plan.ts",
+    "packages/engine/src/sources/git.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 44,
+    "cache_creation_tokens": 55896,
+    "cache_read_tokens": 2892858,
+    "output_tokens": 37060,
+    "api_call_count": 19
+  },
+  "redaction": {
+    "replacements": 1,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 1,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
