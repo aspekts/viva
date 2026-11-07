@@ -28,6 +28,7 @@ The Vite dev server proxies `/v1` to the daemon on `127.0.0.1:4317`, so always c
 |---|---|---|
 | `/` | The Fog | Kay |
 | `/?review=<id>` | Exam room for that review | Sophina |
+| `/` then the Exam room tab | The newest review, or an empty state when there are none (PR #38) | Sophina |
 | Add `mock` to either | Same screen with sample data, for example `/?review=x&mock` | |
 
 `git push` prints `/?review=<id>` when a viva is needed, so that link must always open the exam directly.
@@ -81,7 +82,7 @@ All bodies are JSON. Errors are `{ "error": string }`.
 |---|---|---|---|
 | `GET /v1/health` | | `{ ok: true, llm: string }` | ✅ |
 | `POST /v1/reviews` | `ReviewRequest` | `Review` | ✅ Used by the CLI, not the UI |
-| `GET /v1/reviews` | | `Review[]`, newest first | ✅ |
+| `GET /v1/reviews` | | `Review[]`, newest first | ✅ With PR #38, a repeat push moves a review to the front. Use `getLatestReview()` |
 | `GET /v1/reviews/:id` | | `Review` | ✅ |
 | `POST /v1/reviews/:id/answers` | `Answer[]` | `Review` | ✅ |
 | `POST /v1/reviews/:id/skip` | | `Review` | ✅ Not yet in `client.ts` |
@@ -225,7 +226,7 @@ VivaEvent =
 
 Adding `?mock` loads `fixtures/mock/fog.json`, `fixtures/mock/review.json` and, with PR #8, `fixtures/mock/code.json` through the same schemas as live data. Submitting answers returns a pass.
 
-**Known problem:** the exam room also falls back to mock data when there's no `review` in the URL, even without `?mock`. Opening the Exam room tab with the daemon running shows a fake exam, so don't treat it as real.
+**Known problem on `main`:** the exam room also falls back to mock data when there's no `review` in the URL, even without `?mock`. Opening the Exam room tab with the daemon running shows a fake exam, so don't treat it as real. PR #38 fixes it: with no ID, `getLatestReview()` returns the newest review or `null`, and only `?mock` gives sample data. `?mock&empty` gives `null`.
 
 With PR #37, `?mock&empty` loads `fixtures/mock/fog-empty.json`, the empty state. To test another state, add a fixture, for example `review-failed.json`, and keep it valid against the schema.
 
@@ -237,7 +238,7 @@ Marcus to confirm. Until these land, build the UI against the proposed shape beh
 |---|---|---|
 | **Code for the exam:** no way to fetch the lines under discussion | Code highlighting | 🔜 PR #8 |
 | **Live progress:** no updates during a review or while fog changes | Fog rolling in live, loading screens | 🔜 PR #35 for fog and review changes. Progress during a review is still open |
-| **Latest review:** the Exam room tab has no ID without the URL | Opening the tab directly | 📝 Use the first item from `GET /v1/reviews` |
+| **Latest review:** the Exam room tab has no ID without the URL | Opening the tab directly | 🔜 PR #38: `getLatestReview()`, the first item from `GET /v1/reviews` |
 | **Which repo:** the UI doesn't know the repo for the Fog | Live Fog | 🔜 PR #37: the daemon remembers the last pushed repo, in memory |
 | **Skip:** not in `client.ts`, and the reason isn't recorded in the ledger | Skip button | 📝 Add `skipReview(id)` |
 | **Debt over time:** only the current total exists | A trend chart | 📝 Stretch, with Tiger Data |
