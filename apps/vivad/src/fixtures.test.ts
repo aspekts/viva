@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { FogMap, Review, ReviewCode, ReviewFeedback } from "@viva/contracts";
+import { FogMap, Review, ReviewCode, ReviewFeedback, SavedMemory } from "@viva/contracts";
 
 const fixture = (name: string) => JSON.parse(readFileSync(new URL(`../../../fixtures/mock/${name}`, import.meta.url), "utf8"));
 
@@ -13,6 +13,7 @@ describe("mock fixtures", () => {
     expect(Review.parse(fixture("review-hard-gate.json")).gate).toMatchObject({ skippable: false });
     expect(() => ReviewFeedback.parse(fixture("feedback.json"))).not.toThrow();
     expect(() => ReviewCode.parse(fixture("code.json"))).not.toThrow();
+    expect(() => SavedMemory.parse(fixture("memory.json"))).not.toThrow();
   });
 
   it("show the code for the mock question", () => {

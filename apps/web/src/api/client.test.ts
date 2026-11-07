@@ -151,3 +151,79 @@ describe("skipReview", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 });
+
+describe("saveMemory", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("posts the opt-in save and returns what was written", async () => {
+    const saved = (await import("../../../../fixtures/mock/memory.json")).default;
+    const fetch = vi.fn(async () => new Response(JSON.stringify(saved)));
+    vi.stubGlobal("fetch", fetch);
+    const { saveMemory } = await client("");
+    expect((await saveMemory("a/b")).files).toEqual([".viva/memory/src/webhook.ts.md"]);
+    expect(fetch).toHaveBeenCalledWith("/v1/reviews/a%2Fb/memory", { method: "POST" });
+  });
+
+  it("returns sample memory in mock mode without a daemon", async () => {
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+    expect((await (await client("?mock")).saveMemory("mock-review")).entries[0]?.claim).toMatch(/idempotency/);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("reviewLoader", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  /** A daemon whose responses arrive only when the test releases them, in any order. */
+  function slowDaemon() {
+    const pending: ((body: unknown) => void)[] = [];
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((resolve) => {
+      pending.push((body) => resolve(new Response(JSON.stringify(body))));
+    })));
+    return pending;
+  }
+  const review = async (id: string) => ({ ...JSON.parse(JSON.stringify((await import("../../../../fixtures/mock/review.json")).default)), id });
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it("ignores an older answer that arrives after a newer one", async () => {
+    const pending = slowDaemon();
+    const { reviewLoader } = await client("");
+    const shown: (string | null)[] = [];
+    const loader = reviewLoader(null, (r) => shown.push(r?.id ?? null), () => {});
+    loader.load();
+    loader.load();
+    pending[1]!([await review("newest-B")]);
+    await settle();
+    pending[0]!([await review("older-A")]);
+    await settle();
+    expect(shown).toEqual(["newest-B"]);
+  });
+
+  it("stays on the opened review when a newer one is pushed", async () => {
+    const pending = slowDaemon();
+    const { reviewLoader } = await client("");
+    const shown: (string | null)[] = [];
+    const loader = reviewLoader(null, (r) => shown.push(r?.id ?? null), () => {});
+    loader.load();
+    pending[0]!([await review("first")]);
+    await settle();
+    loader.load();
+    expect(fetch).toHaveBeenLastCalledWith("/v1/reviews/first", undefined);
+    pending[1]!(await review("first"));
+    await settle();
+    expect(shown).toEqual(["first", "first"]);
+  });
+
+  it("reports nothing after it stops", async () => {
+    const pending = slowDaemon();
+    const { reviewLoader } = await client("");
+    const onLoad = vi.fn();
+    const loader = reviewLoader(null, onLoad, () => {});
+    loader.load();
+    loader.stop();
+    pending[0]!([await review("late")]);
+    await settle();
+    expect(onLoad).not.toHaveBeenCalled();
+  });
+});
