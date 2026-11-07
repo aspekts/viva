@@ -2,7 +2,7 @@
 
 Your starting point, kept up to date as work lands. For exact API details, see [the app contract](APP_CONTRACT.md).
 
-**Last updated:** Saturday 7 November, 21:25
+**Last updated:** Saturday 7 November, 21:37
 
 ## Start here
 
@@ -76,7 +76,7 @@ Agents are working on these, and nothing merges without Marcus reviewing it.
 | Feature | Unblocks | Status |
 |---|---|---|
 | Code for each question | Code highlighting | [PR #8](https://github.com/aspekts/viva/pull/8), awaiting review. `getReviewCode()` works with `?mock` on that branch |
-| Live events | Fog rolling in live | Queued. Poll until then |
+| Live events | Fog rolling in live | [PR #35](https://github.com/aspekts/viva/pull/35), awaiting review. Use `watch("fog", reload)`, which polls by itself until events connect |
 | Fog knows which repo to map | Live Fog | Queued |
 | Latest review | Opening the exam tab directly | Queued |
 | `skipReview(id)` | Skip button | Queued |
@@ -86,7 +86,7 @@ Build these against mock data and the shapes proposed in the contract. If a fina
 ## Good to know
 
 - **The exam tab can show fake data.** With no `review` in the URL, it falls back to sample data even when the daemon is running.
-- **Only two states are visible:** `awaiting-exam` and `done`. Use a generic loading state.
+- **Only two states are visible:** `awaiting-exam` and `done`. Use a generic loading state, even with live events.
 - **Reviews vanish when the daemon restarts.** Show a "run `git push` again" message on a 404.
 - **Grading takes a moment,** so disable buttons while a request is in flight.
 - **Never show the rubric before an answer.** `mustMention` is in the response, but it gives the answer away.
@@ -115,5 +115,6 @@ Newest first. Add a line when something changes what the frontend can rely on.
 
 | When | What changed |
 |---|---|
+| Sat 21:37 | [PR #35](https://github.com/aspekts/viva/pull/35) open, not merged: `watch(topic, refresh)` in `client.ts` calls you back when the fog or a review changes, including when an agent commits. `FogView` and `ExamRoom` already call it. It doesn't show progress while a review runs |
 | Sat 21:25 | [PR #8](https://github.com/aspekts/viva/pull/8) open, not merged: `getReviewCode()` and `GET /v1/reviews/:id/code` return the lines for a question. The exam shows them unstyled, in `exam/QuestionCode.tsx`. Sophina, restyle or replace it. Not yet seen in a browser |
 | Sat 21:20 | Handoff, contract and overnight queue created |

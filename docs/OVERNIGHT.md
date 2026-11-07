@@ -21,7 +21,6 @@ Marcus starts each run, as nothing picks this up automatically. Agents work top 
 
 | Request | Why | Done when | From |
 |---|---|---|---|
-| Live events for reviews and fog | Fog rolling in live, loading states | The UI updates without polling | Contract gaps |
 | Tell the Fog which repo to map | Live Fog shows the wrong folder | Live Fog shows the pushed repo with no `?repo` set by hand | Contract gaps |
 | Latest review for the Exam room tab | Opening the tab directly | The tab opens the newest review, or a clear empty state | Contract gaps |
 | `skipReview(id)` in `client.ts` | Skip button | Skip works, and is refused on hard gates | Contract gaps |
@@ -31,3 +30,4 @@ Marcus starts each run, as nothing picks this up automatically. Agents work top 
 | Request | PR |
 |---|---|
 | Endpoint for the code under discussion | [PR #8](https://github.com/aspekts/viva/pull/8), awaiting review, not merged. Stacked on PR #5. No file outside the diff is served, and wrong model line numbers aren't detected |
+| Live events for reviews and fog | [PR #35](https://github.com/aspekts/viva/pull/35), awaiting review, not merged. Stacked on PR #8. Shows a review once it's created or decided, but not its progress while it runs. Polling continues as the fallback |

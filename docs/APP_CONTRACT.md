@@ -88,6 +88,7 @@ All bodies are JSON. Errors are `{ "error": string }`.
 | `GET /v1/fog?repo=<path>` | | `FogMap` | ✅ |
 | `GET /v1/reviews/:id/feedback` | | `ReviewFeedback` | 🔜 PR #5 |
 | `GET /v1/reviews/:id/code?file=&start=&end=` | | `ReviewCode` | 🔜 PR #8 |
+| `GET /v1/events` | | Server-sent events, each `data:` is a `VivaEvent` | 🔜 PR #35 |
 
 Notes:
 
@@ -185,7 +186,7 @@ FogNode: {
 - Mastery fades with time and halves when the code changes, so fog returns on its own.
 - `person` is the Git `user.name`, not a GitHub login. Map colours from that string, and allow for unknown names.
 - Node sizes vary hugely, so use a scale such as `sqrt(size)`.
-- There's no live push yet. To show fog rolling in, poll `/v1/fog` every couple of seconds, and animate the difference between responses.
+- To show fog rolling in, refetch `/v1/fog` and animate the difference between responses. With PR #35, `watch("fog", reload)` tells you when to refetch. Until it lands, poll every couple of seconds.
 
 ### Voice exam 📝
 
@@ -205,6 +206,20 @@ Proposed, so Sophina can change it. The React app talks to ElevenLabs directly, 
 
 `VITE_ELEVENLABS_AGENT_ID` is exposed to the browser, so it must only be a public agent ID. Never put API keys in `apps/web`.
 
+### Live events 🔜 PR #35
+
+```ts
+VivaEvent =
+  | { type: "review"; reviewId: string; stage: ReviewStage; gate: Gate | null }  // created, answered or skipped
+  | { type: "fog"; repoPath: string }  // refetch the fog
+```
+
+- Use `watch("fog" | "review", refresh)` from `client.ts` rather than `EventSource` directly. It returns a stop function, so return that from `useEffect`.
+- `watch` polls every 2 seconds until the stream connects, and whenever it drops. It refetches once on every connect, because missed events aren't replayed. In `?mock` it does nothing.
+- Events only say what changed, so always refetch. They never carry code, questions or answers.
+- `fog` also fires when someone commits to a reviewed repo with no push, checked every 2 seconds while anyone listens.
+- There's still no progress while a review runs.
+
 ## Mock mode
 
 Adding `?mock` loads `fixtures/mock/fog.json`, `fixtures/mock/review.json` and, with PR #8, `fixtures/mock/code.json` through the same schemas as live data. Submitting answers returns a pass.
@@ -220,7 +235,7 @@ Marcus to confirm. Until these land, build the UI against the proposed shape beh
 | Gap | Blocks | Proposal |
 |---|---|---|
 | **Code for the exam:** no way to fetch the lines under discussion | Code highlighting | 🔜 PR #8 |
-| **Live progress:** no updates during a review or while fog changes | Fog rolling in live, loading screens | 📝 Server-sent events at `GET /v1/events`. Poll until then |
+| **Live progress:** no updates during a review or while fog changes | Fog rolling in live, loading screens | 🔜 PR #35 for fog and review changes. Progress during a review is still open |
 | **Latest review:** the Exam room tab has no ID without the URL | Opening the tab directly | 📝 Use the first item from `GET /v1/reviews` |
 | **Which repo:** the UI doesn't know the repo for the Fog | Live Fog | 📝 Take it from the latest review, or a daemon setting |
 | **Skip:** not in `client.ts`, and the reason isn't recorded in the ledger | Skip button | 📝 Add `skipReview(id)` |
