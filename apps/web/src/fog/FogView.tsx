@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { FogMap } from "@viva/contracts";
-import { getFog } from "../api/client";
+import { getFog, watch } from "../api/client";
 
 /** Placeholder map, showing the data shape. Kay owns the real visual. */
 export function FogView() {
@@ -8,7 +8,9 @@ export function FogView() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    getFog().then(setMap, (e: Error) => setError(e.message));
+    const load = () => getFog().then((loaded) => { setMap(loaded); setError(null); }, (e: Error) => setError(e.message));
+    load();
+    return watch("fog", load);
   }, []);
 
   if (error) return <p role="alert">Could not load the map: {error}. Add ?mock to the URL to use sample data.</p>;

@@ -222,3 +222,10 @@ export const FogMap = z.object({
   nodes: z.array(FogNode),
 });
 export type FogMap = z.infer<typeof FogMap>;
+
+/** A signal to refetch over SSE, so no code, transcript or fog data travels in it. */
+export const VivaEvent = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("review"), reviewId: z.string(), stage: ReviewStage, gate: Gate.nullable() }),
+  z.object({ type: z.literal("fog"), repoPath: z.string() }),
+]);
+export type VivaEvent = z.infer<typeof VivaEvent>;

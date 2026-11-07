@@ -1,6 +1,7 @@
 import type { Attestation, FogMap, FogNode } from "@viva/contracts";
 import { defaults, type VivaConfig } from "./config.js";
 import { decayedMastery } from "./ledger/mastery.js";
+import { NOTES_REF } from "./ledger/notes.js";
 import { git } from "./sources/git.js";
 
 export interface FogFile {
@@ -37,4 +38,13 @@ export async function loadFogFiles(repoPath: string): Promise<FogFile[]> {
       if (type !== "blob" || !file || /(^|\/)pnpm-lock\.yaml$/.test(file)) return [];
       return [{ file, size: Number(size) || 0, blastRadius: 0, hash: hash ?? null }];
     });
+}
+
+/** Changes whenever the map could: on a new commit, or a new ledger entry. */
+export async function fogVersion(repoPath: string): Promise<string> {
+  const [head, notes] = await Promise.all([
+    git(repoPath, ["rev-parse", "HEAD"]),
+    git(repoPath, ["for-each-ref", "--format=%(objectname)", NOTES_REF]),
+  ]);
+  return `${head.trim()}:${notes.trim()}`;
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Answer, Review } from "@viva/contracts";
-import { getReview, submitAnswers } from "../api/client";
+import { getReview, submitAnswers, watch } from "../api/client";
 import { QuestionCode } from "./QuestionCode";
 
 /** Typed exam first. Sophina adds the ElevenLabs voice session behind the same answers. */
@@ -10,7 +10,9 @@ export function ExamRoom({ reviewId }: { reviewId: string | null }) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    getReview(reviewId).then(setReview, (e: Error) => setError(e.message));
+    const load = () => getReview(reviewId).then((loaded) => { setReview(loaded); setError(null); }, (e: Error) => setError(e.message));
+    load();
+    return watch("review", load);
   }, [reviewId]);
 
   if (error) return <p role="alert">Could not load this review: {error}</p>;
