@@ -21,6 +21,9 @@ export interface LlmProvider {
   complete<T>(request: LlmRequest<T>): Promise<LlmResult<T>>;
 }
 
+export const CHARS_PER_TOKEN = 4;
+export const estimateTokens = (text: string): number => Math.ceil(text.length / CHARS_PER_TOKEN);
+
 export class BudgetExceededError extends Error {}
 
 /** Wraps a provider with usage counting and a per-review token cap. */

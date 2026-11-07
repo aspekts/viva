@@ -7,7 +7,7 @@ import { blobHash, loadChange } from "../sources/git.js";
 import type { BlastRadiusSource } from "../sources/graph.js";
 import { resolveSession, type SessionSource } from "../sources/session.js";
 import { aggregateGrades } from "./aggregate.js";
-import { runChecks, type CheckDefinition } from "./checks.js";
+import { runChecks, sessionTokenBudget, type CheckDefinition } from "./checks.js";
 import { gradeAnswer } from "./grade.js";
 import { scanForInjection } from "./injection.js";
 import { planExam } from "./plan.js";
@@ -57,7 +57,11 @@ export async function startReview(request: ReviewRequest, deps: ReviewDeps): Pro
   const injection = scanForInjection(change.diff);
   if (injection) return finish(review, injection, now());
 
-  const session = await resolveSession(deps.session, request.repoPath, request.head, request.intent);
+  const session = await resolveSession(deps.session, request.repoPath, request.head, request.intent, {
+    base: request.base,
+    files: change.files.map((f) => f.path),
+    maxTokens: sessionTokenBudget(deps.checks, change, config.maxInputTokens),
+  });
   const claims = await runChecks(deps.checks, change, session, llm);
 
   const inputs = new Map<string, number>();
