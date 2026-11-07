@@ -1,5 +1,4 @@
 import { spawn } from "node:child_process";
-import { createInterface } from "node:readline";
 import { z } from "zod";
 import { CHARS_PER_TOKEN } from "../llm/provider.js";
 import { git } from "./git.js";
@@ -20,6 +19,7 @@ const EDIT_TOOL = /edit|write|patch/i;
 const MAX_COMMITS = 100;
 const MAX_SESSIONS = 32;
 const MAX_PASSAGE_CHARS = 4_000;
+const MAX_LINE_BYTES = 256 * 1024;
 /** Without a budget from the caller, stay well inside one check's share of a review. */
 const DEFAULT_MAX_TOKENS = 8_000;
 /** Prompts come first, but one huge paste must not crowd out all the reasoning. */
@@ -74,7 +74,7 @@ function readBlock(block: z.infer<typeof Block>, files: string[], reasoning: Pas
     const changed = changedPath(path, files);
     // The reasoning just before an edit to a changed file is what explains it.
     if (changed && reasoning) reasoning.relevance = 4;
-    return { text: `[${block.name}] ${changed ?? path}`, relevance: changed ? 4 : 0 };
+    return { text: clip(`[${block.name}] ${changed ?? path}`, MAX_PASSAGE_CHARS), relevance: changed ? 4 : 0 };
   }
   const description = block.input?.description;
   return typeof description === "string" && description.trim()
@@ -82,7 +82,38 @@ function readBlock(block: z.infer<typeof Block>, files: string[], reasoning: Pas
     : undefined;
 }
 
-/** Streams a transcript, so the size of a session never sets the size of the heap. */
+/** Skip oversized lines before decoding or parsing; retain physical line offsets. */
+export async function boundedLines(
+  chunks: AsyncIterable<Buffer>,
+  onLine: (line: string, index: number) => void,
+  maxBytes = MAX_LINE_BYTES,
+) {
+  const buffer = Buffer.alloc(maxBytes);
+  let length = 0;
+  let skipped = false;
+  let index = 0;
+  for await (const chunk of chunks) {
+    let start = 0;
+    while (start < chunk.length) {
+      const newline = chunk.indexOf(10, start);
+      const end = newline < 0 ? chunk.length : newline;
+      const size = end - start;
+      if (length + size > maxBytes) skipped = true;
+      if (!skipped) {
+        chunk.copy(buffer, length, start, end);
+        length += size;
+      }
+      if (newline < 0) break;
+      if (!skipped) onLine(buffer.toString("utf8", 0, length).replace(/\r$/, ""), index);
+      index += 1;
+      length = 0;
+      skipped = false;
+      start = newline + 1;
+    }
+  }
+  if (!skipped && length > 0) onLine(buffer.toString("utf8", 0, length).replace(/\r$/, ""), index);
+}
+
 async function forEachLine(repoPath: string, object: string, timeout: number, onLine: (line: string, index: number) => void) {
   const child = spawn("git", ["cat-file", "blob", object], {
     cwd: repoPath,
@@ -93,12 +124,56 @@ async function forEachLine(repoPath: string, object: string, timeout: number, on
     child.once("error", reject);
     child.once("close", resolve);
   });
-  const consume = async () => {
-    let index = 0;
-    for await (const line of createInterface({ input: child.stdout, crlfDelay: Infinity })) onLine(line, index++);
-  };
-  const [code] = await Promise.all([exited, consume()]);
+  const [code] = await Promise.all([exited, boundedLines(child.stdout, onLine)]);
   if (code !== 0) throw new Error("could not read transcript");
+}
+
+/** Keep the ranked prefix that could fill the entire budget, plus one boundary passage.
+ * A pending reasoning passage is added only after any following edit can promote it.
+ * Bounds include separators: even one-character passages cannot grow the array forever.
+ */
+export class PassageBuffer {
+  private ranked: { passage: Passage; index: number }[] = [];
+  private chars = 0;
+  private sequence = 0;
+  pruned = false;
+
+  constructor(private readonly room: number) {}
+
+  nextIndex() {
+    return this.sequence++;
+  }
+
+  add(passage: Passage, index: number) {
+    const duplicate = this.ranked.findIndex((entry) => entry.passage.text === passage.text);
+    if (duplicate >= 0) {
+      // Pending reasoning can arrive after a later tool with identical text.
+      if (this.ranked[duplicate]!.index < index) return;
+      this.ranked.splice(duplicate, 1);
+      this.chars -= passage.text.length + 2;
+    }
+    const entry = { passage, index };
+    const position = this.ranked.findIndex((other) =>
+      other.passage.relevance < passage.relevance ||
+      (other.passage.relevance === passage.relevance && other.index < index));
+    this.ranked.splice(position < 0 ? this.ranked.length : position, 0, entry);
+    this.chars += passage.text.length + 2;
+    while (this.ranked.length > 0) {
+      const last = this.ranked[this.ranked.length - 1]!;
+      const size = last.passage.text.length + 2;
+      if (this.chars - size < this.room) break;
+      this.ranked.pop();
+      this.chars -= size;
+      this.pruned = true;
+    }
+  }
+
+  get retainedChars() {
+    return this.chars;
+  }
+  get passages() {
+    return [...this.ranked].sort((a, b) => a.index - b.index).map((entry) => entry.passage);
+  }
 }
 
 function parseRecord(line: string, type: "assistant" | "user") {
@@ -114,18 +189,24 @@ function parseRecord(line: string, type: "assistant" | "user") {
   return record.data.content ?? record.data.message?.content ?? [];
 }
 
-async function readPassages(repoPath: string, object: string, start: number, files: string[], timeout: number) {
-  const passages: Passage[] = [];
+async function readPassages(repoPath: string, object: string, start: number, files: string[], timeout: number, room: number) {
+  const passages = new PassageBuffer(room);
   let reasoning: Passage | undefined;
+  let reasoningIndex = 0;
   await forEachLine(repoPath, object, timeout, (line, index) => {
     if (index < start) return;
     for (const block of parseRecord(line, "assistant")) {
       const passage = readBlock(block, files, reasoning);
       if (!passage) continue;
-      passages.push(passage);
-      if (block.type !== "tool_use") reasoning = passage;
+      const order = passages.nextIndex();
+      if (block.type !== "tool_use") {
+        if (reasoning) passages.add(reasoning, reasoningIndex);
+        reasoning = passage;
+        reasoningIndex = order;
+      } else passages.add(passage, order);
     }
   });
+  if (reasoning) passages.add(reasoning, reasoningIndex);
   return passages;
 }
 
@@ -176,7 +257,7 @@ async function locate(repoPath: string, id: string): Promise<{ root: string; ses
  * keeps thinking but is in each agent's own format, so anything we cannot read
  * there falls back to the normalised `transcript.jsonl`, which has no thinking.
  */
-async function readSession(repoPath: string, root: string, files: string[], deadline: number) {
+async function readSession(repoPath: string, root: string, files: string[], deadline: number, room: number) {
   const meta = SessionMeta.parse(await readJson(repoPath, `${root}metadata.json`));
   const remaining = () => Math.max(1, deadline - Date.now());
   const compact = `${root}transcript.jsonl`;
@@ -189,9 +270,9 @@ async function readSession(repoPath: string, root: string, files: string[], dead
     { object: `${root}full.jsonl`, start: meta.checkpoint_transcript_start ?? 0 },
     { object: compact, start: meta.compact_transcript_start ?? 0 },
   ];
-  let passages: Passage[] = [];
+  let passages = new PassageBuffer(room);
   for (const { object, start } of transcripts) {
-    if (passages.length === 0) passages = await readPassages(repoPath, object, start, files, remaining()).catch(() => []);
+    if (passages.passages.length === 0) passages = await readPassages(repoPath, object, start, files, remaining(), room).catch(() => new PassageBuffer(room));
   }
   return { prompts: prompts.split(PROMPT_SEPARATOR), passages };
 }
@@ -210,13 +291,14 @@ function shareEvenly(texts: string[], room: number): string[] {
 }
 
 /** Keeps the most relevant passages, latest first on a tie, then restores their order. */
-function selectPassages(passages: Passage[], room: number): string | null {
+function selectPassages(passages: Passage[], room: number, pruned: boolean): string | null {
   const ranked = passages
     .map((passage, index) => ({ ...passage, index }))
     .sort((a, b) => b.relevance - a.relevance || b.index - a.index);
 
+  // Once pruning starts, an exact unique total would itself require unbounded storage.
   const note = (kept: number) =>
-    kept < passages.length ? `[Viva kept ${kept} of ${passages.length} agent passages, by relevance to the changed files.]\n\n` : "";
+    (pruned || kept < passages.length) ? `[Viva kept ${kept}${pruned ? "" : ` of ${passages.length}`} agent passages, by relevance to the changed files.]\n\n` : "";
   let left = room - note(0).length;
   const kept: { index: number; text: string }[] = [];
   for (const { index, text } of ranked) {
@@ -233,7 +315,7 @@ function selectPassages(passages: Passage[], room: number): string | null {
   return `${note(kept.length)}${body}`;
 }
 
-export function fitSession(prompts: string[], passages: Passage[], maxTokens: number): SessionContext | null {
+export function fitSession(prompts: string[], passages: Passage[], maxTokens: number, pruned = false): SessionContext | null {
   const maxChars = Math.floor(maxTokens * CHARS_PER_TOKEN);
   const wanted = prompts.reduce((sum, p) => sum + p.length + PROMPT_SEPARATOR.length, 0);
   const intentRoom = passages.length > 0 ? Math.min(wanted, Math.floor(maxChars * INTENT_SHARE)) : Math.min(wanted, maxChars);
@@ -241,7 +323,7 @@ export function fitSession(prompts: string[], passages: Passage[], maxTokens: nu
   const intent = shareEvenly(prompts, intentRoom - separators)
     .filter(Boolean)
     .join(PROMPT_SEPARATOR);
-  const transcript = selectPassages(passages, maxChars - intent.length);
+  const transcript = selectPassages(passages, maxChars - intent.length, pruned);
   if (!intent && !transcript) return null;
   return { source: "entire", intent: intent || null, transcript };
 }
@@ -252,17 +334,19 @@ export const entireSource: SessionSource = {
     try {
       const deadline = Date.now() + READ_TIMEOUT_MS;
       const prompts = new Set<string>();
-      const passages = new Map<string, Passage>();
+      const room = Math.max(0, Math.floor(maxTokens * CHARS_PER_TOKEN));
+      const passages = new PassageBuffer(room);
       for (const id of await checkpointIds(repoPath, head, base)) {
         const checkpoint = await locate(repoPath, id);
         for (let index = 0; index < (checkpoint?.sessions ?? 0); index += 1) {
-          const session = await readSession(repoPath, `${checkpoint?.root}${index}/`, files, deadline).catch(() => null);
+          const session = await readSession(repoPath, `${checkpoint?.root}${index}/`, files, deadline, room).catch(() => null);
           for (const prompt of session?.prompts ?? []) if (prompt.trim()) prompts.add(prompt.trim());
-          // Overlapping turns repeat across checkpoints, so each passage counts once.
-          for (const passage of session?.passages ?? []) passages.set(passage.text, passages.get(passage.text) ?? passage);
+          // Deduplicate retained overlapping turns without an unbounded set of discarded text.
+          for (const passage of session?.passages.passages ?? []) passages.add(passage, passages.nextIndex());
+          passages.pruned ||= session?.passages.pruned ?? false;
         }
       }
-      return fitSession([...prompts], [...passages.values()], maxTokens);
+      return fitSession([...prompts], passages.passages, maxTokens, passages.pruned);
     } catch {
       return null;
     }
