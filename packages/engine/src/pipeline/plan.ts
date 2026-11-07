@@ -58,5 +58,7 @@ export async function planExam(claims: RankedClaim[], llm: LlmProvider): Promise
     unasked.delete(question.claimId);
     return [{ ...question, location: claim.location }];
   });
+  // A plan with no usable questions would grade as a pass, so it's a pipeline failure.
+  if (questions.length === 0) throw new Error("exam plan asked about none of the risky claims");
   return { questions };
 }
