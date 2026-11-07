@@ -1,0 +1,399 @@
+Delegated task node:delegated-task:command%3Amcp%3Af9010e19-eb5e-4ec0-a950-6853cf3b280f%3Adelegate-task%3Aec0f06c3-b292-4997-8946-d9b32b5a045f (Review #49 re-land (Sol)) [completed]:
+**MERGE AFTER FIXES** — reviewed [PR #49](https://github.com/aspekts/viva/pull/49) at `291b87e`.
+
+Blocking:
+- `apps/vivad/src/decisions.ts:28` still accepts cached `exam-passed` receipts created by the empty-exam bug. #49 includes #47’s original guard but misses its newer `cdc654d` policy invalidation. **Fix:** merge current #47 first, or include that commit and its contract/tests.
+
+Notes:
+- No #7 tuning lost against `6693762`; no reversions found from main’s #3/#4/#5/#8/#35.
+- `plan.ts:53–62` safely filters unknown/duplicate claims, uses claim locations, then throws if nothing remains. Empty plans cannot reach new exams; submission and aggregation guards survive. Partial claim coverage remains possible: known, nonblocking follow-up.
+- Budget fix correctly measures `numberDiff(change.diff)`. `untrusted()` fencing, schema parsing, and ledger/log boundaries remain intact.
+
+Validation:
+- `pnpm install`: passed.
+- `env -u VIVA_LLM -u GEMINI_API_KEY pnpm check`: passed; **173 tests**, offline evals. Known flaky exam test passed first time. No `.env` or live calls.
+
+Trial merges:
+- main `82d2272`: clean, already included.
+- #50 `294426a`: clean.
+- #47 `2598af4`: one import conflict at `apps/vivad/src/app.test.ts:3`; retain `existsSync`, `mkdirSync`, and the separate `rm` import.
+
+Scratch branches/checkouts deleted; no tracked edits or remote actions.
+
+Delegated task node:delegated-task:command%3Amcp%3Af9010e19-eb5e-4ec0-a950-6853cf3b280f%3Adelegate-task%3Aed232089-58c2-4140-90ab-60520f7533df (Review #48 and #51 (Opus)) [completed]:
+Both PRs can merge. I found nothing blocking in either, and neither conflicts with the other, #49 or #50.
+
+## #48 "Bound Entire transcript memory while streaming": **SAFE TO MERGE**
+
+**Blocking findings:** none.
+
+**What I confirmed:**
+- **Memory is really bounded.** I measured a 119 MB checkpoint with 40,000 passages and an 8,000-token budget:
+  - main runs out of memory with a 64 MB heap cap; #48 finishes inside a 24 MB cap.
+  - With no cap, the heap grows by 4.5 MB on #48 for a single 110 MB line, against 319 MB on main.
+- **A huge single line costs nothing extra.** `boundedLines` (`entire.ts:86`) uses one fixed 256 KiB buffer and drops the bytes of any longer line without keeping them. Line numbering, UTF-8 split across chunks and CRLF are all handled and tested.
+- **Selection order is preserved.** A throwaway fuzz test ran 30 random checkpoints of 1–3 sessions, with budgets from 50 to 20,000 tokens. With distinct passage texts, the selected passages and their order matched main exactly in every case. This covers relevance-then-latest ranking, edits promoting the reasoning before them, and pruning. The fuzz test disabled the "kept N" note, so it doesn't vouch for the note text.
+- **`untrusted()` fencing and fail-open behaviour are intact.** `load` still catches everything and returns null, and nothing new is logged.
+
+**Behaviour changes (not blocking):**
+- **Over-long lines are skipped.** Any transcript line over 256 KiB is now skipped. A Write or Edit with a very large file body therefore loses its `[Edit] file` passage, and the reasoning before it is no longer promoted. The same applies to a pasted prompt over 256 KiB when the prompt is read from the transcript. This is rare and acceptable.
+- **Duplicates are now removed within a session too.** For example, two identical "Done." passages become one, and the PR's own test asserts this. One side effect: if the same reasoning sentence appears twice, the earlier, unpromoted copy is kept. A later copy that an edit promoted to relevance 4 is lost. Suggested fix: on a duplicate, keep the higher relevance.
+- **The note changes once pruning starts.** It reads "kept N agent passages", without "of M".
+- **Duplicate checks get slower with many tiny passages.** Each new passage is compared against every kept one, which only matters for pathological transcripts of thousands of tiny passages.
+
+**Check results:**
+- `pnpm check`: typecheck passed, and tests were 147/148. The only failure was the known `exam.test.ts` "takes typed answers…" flake, which passed when rerun.
+- Evals: exit 0. I ran them separately because `pnpm check` stops at the first test failure.
+
+## #51 "Harden the push gate": **SAFE TO MERGE**
+
+**Blocking findings:** none.
+
+**What I confirmed:**
+- **Fail open still holds for a dead daemon.** A connection failure mid-submission surfaces as a `TypeError` and the push goes through. A 5xx response also lets it through. Only `SubmissionTimeoutError` and 4xx errors block, at `cli.ts:84`. Tests cover all four cases.
+- **Hard gates can still never be skipped.** The `skippable === false` check is still enforced by the daemon at `app.ts:141`. Moving the 409 "in progress" check ahead of it only changes the error message.
+- **Slow grading now blocks, which is the right call.** Answers and skips get 120 s. If a submission times out after the developer has answered, the push is blocked with "retry git push", because the result is unknown and shouldn't count as a pass. The retry then gets the stored decision. If grading is still running at that point, the developer sees the exam again and gets a 409 "already in progress" after answering. That's safe but clunky.
+- **Attestations can't be doubled.** The decision receipt is written first, the review is then marked done, and only then are attestations appended to the ledger.
+  - If the receipt write fails, the ledger is untouched and a retry grades again.
+  - If the append fails, the review is already done, so a resubmit gets a 409 and doesn't append twice. Tests cover both paths.
+  - A daemon crash between the receipt and the append can lose that review's attestations; the PR documents this. Main's order risked doubling them instead.
+- **Escape stripping is complete.** I probed it with CSI, OSC (BEL and ESC-backslash terminated, including clipboard OSC 52), C1 characters (0x9B, 0x9D), DCS and plain ESC sequences. No control byte survived. Two cosmetic leftovers:
+  - The payload of an OSC with spaces or of a DCS can stay as visible text (e.g. "y evil title").
+  - Tabs are deleted, which joins the words either side; right-to-left override characters (U+202E) pass through.
+
+**Not blocking:**
+- **A ledger-append failure still lets that one push through.** It returns a 500, which the client treats as an infrastructure failure, even when the verdict was a reject. Main behaves the same way, and with #51 the decision now holds on retry. Suggested follow-up: catch the append error in `app.ts:129` and return the review anyway.
+- **Windows path check (`cli.ts:136`).** It's no worse than main. However, `realpathSync` doesn't normalise drive-letter case or 8.3 short names (e.g. `RUNNER~1`) on Windows. Suggested follow-up: `realpathSync.native` plus a case-insensitive comparison on win32. I couldn't run the junction-based symlink test on Windows here, but junctions don't need admin rights, so it should work in CI.
+
+**Check results:** `pnpm check` passed, 158/158 tests, typecheck and evals OK.
+
+## Conflicts
+I trial-merged onto `origin/main` in a scratch worktree. #48 and #51 merge cleanly in either order, and each merges cleanly with #49 and #50. All four together (#49, #50, #48, #51) also merge cleanly. #50 and #51 both edit the skip handler, and the combined result is coherent. `pnpm check` on the four-PR merge passed, 213/213. I've removed the scratch worktrees, the fetched PR refs and the throwaway test files.
+
+I pushed nothing and posted nothing on GitHub.
+
+---
+
+Delegated task node:delegated-task:command%3Amcp%3Af9010e19-eb5e-4ec0-a950-6853cf3b280f%3Adelegate-task%3Ac8b555e6-0aba-40de-8450-3c41f608157e (Fix #45 #46 review findings (Opus)) [completed]:
+I've fixed all three findings and pushed one normal commit for each, with no force-push. `env -u VIVA_LLM -u GEMINI_API_KEY pnpm check` passes offline on both branches. I made no live model calls. I updated both PR bodies, including an "After independent review" section.
+
+**#45: symlink check before any folder is created**
+- `safeTarget` in `packages/engine/src/memory/store.ts` now checks every folder on the way to the memory file that already exists (`.viva`, `.viva/memory`, then each nested folder) before it creates anything. It refuses a symlinked folder, or a path part that isn't a folder. The old check after creating folders stays as a second look.
+- New tests cover a symlinked `.viva`, `.viva/memory` and `.viva/memory/src`, each asserting the outside folder stays empty, plus a nested path part that is a file. All of them fail on the old code.
+- The tests use junctions, which Windows allows without special permissions, so they should run on Windows CI. Where creating one fails with a permission error they skip with the reason "this machine does not permit creating symlinks or junctions".
+- Result: 137 tests, evals 6/6.
+
+**#46: merged #45's branch in, then fixed both P1s**
+- **Memory is read at the push's base only.** `relevantMemory(repoPath, base, files)` no longer reads head, so memory the push adds or edits plays no part in reviewing it. New tests show that:
+  - an entry edited under the same ID can't replace the base version;
+  - 16 newer entries can't push the base entry out of the eight-entry limit;
+  - memory added in the push is ignored. There's a matching new eval case, "memory added in the same push".
+
+  `docs/ARCHITECTURE.md` and `README.md` now describe memory as unsigned repository assertions, not verified developer statements.
+- **Direction claims always reach the exam.** They now come first in the ranking (which also wins them any overlap with another claim) and are selected regardless of the risk threshold, up to `maxQuestions`. The remaining questions go to the riskiest other claims. The changes are in `rankClaims` and in `startReview`.
+  - Two new pipeline tests, both failing on the old selection: a requested reversal with nothing else risky still gets an exam, and against four higher-risk claims the reversal is asked first.
+  - New eval case: "requested reversal of a recorded decision" must still be examined. To support it, the mock direction check now marks a claim as requested when the intent says "reverse".
+- Result: 151 tests, evals 11/11.
+
+**Uncertain or worth knowing**
+- If a push reverses more recorded decisions than `maxQuestions` (3), the reversals take every question and other risky claims go unasked that push. I chose this because the team recorded those decisions explicitly; it's noted in the PR body.
+- **#45 shows as conflicting with its base, `queue/5-skip`.** This was there before my commit: the base moved, and the original PR head already conflicts in `apps/vivad/src/app.test.ts`. I didn't resolve it.
+- `memory-direction-check` is checked out in another worktree (`t3-5522d810`), so I worked on a local branch here, `fix/memory-direction-review`, and pushed it to `memory-direction-check`. That worktree's local branch is now behind the remote. Because of the local name, the merge commit's message says "into fix/memory-direction-review".
+- I didn't duplicate the empty-exam fix (#47), and the known flaky exam test didn't come up.
+
+PR https://github.com/aspekts/viva/pull/45, head 354c4be796fe67bd76bd70a588ff1e914f0d6fad, checks and reviews: CodeRabbit skipped and no other checks reported; no reviews; conflicting with base `queue/5-skip`.
+PR https://github.com/aspekts/viva/pull/46, head 0c025a7258e120b33860ff3f5a43777ed2d3d171, checks and reviews: CI check on ubuntu, windows and macos still running, CodeRabbit skipped; no reviews; mergeable.
+
+---
+
+Delegated task node:delegated-task:command%3Amcp%3Af9010e19-eb5e-4ec0-a950-6853cf3b280f%3Adelegate-task%3Aec78df7a-e7fd-4d6f-8a1d-e33050393e39 (Review #43 and #44 (Opus)) [completed]:
+Neither PR is ready yet. Both are **MERGE AFTER FIXES**: #43 has two blocking problems, and #44 has one small regression. Everything here was read-only: nothing was pushed, commented on or approved, and my scratch branches, worktrees and throwaway tests are deleted.
+
+## #43 ledger sync — MERGE AFTER FIXES
+
+**Blocking**
+
+1. **One bad note from any teammate breaks the Fog and reviews for the whole team, permanently.** `packages/engine/src/ledger/notes.ts:21` calls `JSON.parse(row)` without a try/catch. That was harmless while notes were local only. Now `sync.ts:29` merges in teammates' notes with a union merge, so a non-JSON line (old tool, typo, hand edit) reaches every clone and can never be removed.
+   - **Confirmed with a throwaway test:** clone B adds `notes add -m "not json"` and syncs; A syncs; `readLedger(A)` throws. `/v1/fog` then returns 500 and `POST /v1/reviews` returns 500.
+   - Pushes still go through (the hook fails open), but Viva silently stops reviewing for everyone.
+   - **Fix:** catch parse errors per line and skip bad lines. Add a regression test: a malformed teammate line, then check that `/v1/fog` returns 200.
+
+2. **The 1.5-second budget can't fit a real sync with GitHub, so the feature won't work against the team's remote.**
+   - **Measured on this machine**, with the PR's exact options over SSH: `git fetch` of `main` took 1.49–1.51s (3 runs), and `ls-remote` took 1.47–1.58s.
+   - `sync.ts:11` gives fetch, merge, push and the retry one combined 1.5s deadline. So background publishing and `viva ledger sync` will almost always fail and print "unavailable; retry later".
+   - Meanwhile each review start (`app.ts:85`) and each Fog load (`app.ts:229`) still waits about 1.5s for a fetch that usually times out.
+   - The deadline also covers the local `git notes merge`, which gets killed if the fetch used up the budget.
+   - **Fix:**
+     - Apply the deadline only to `fetch` and `push`.
+     - Give background publishing and `viva ledger sync` about 15–20s.
+     - Stop awaiting the fetch on review start and Fog loads: run it in the background, at most about once a minute per repo.
+
+**Non-blocking**
+- **SSH override (`sync.ts:22`):** the default `GIT_SSH_COMMAND` overrides the user's `core.sshCommand` (e.g. a custom key) and `GIT_SSH` (plink on Windows), so login fails silently. Only set it when none of the three is already set.
+- **Windows (not tested; no Windows machine):** Node's `execFile` timeout kills only `git.exe`. Its `ssh` or `git-remote-https` child processes can keep the pipes open, so the call may not return at the deadline. There is also no lock-file cleanup on kill, so a stale `refs/notes/viva.lock` could make the next attestation append fail. The PR's stalled-remote test only proves macOS/Linux. Suggest wrapping the call in an outer `Promise.race` deadline.
+- **Lock is per process (`lock.ts:4`):** `viva ledger sync` (the CLI process) racing a daemon append could lose an update. I believe git updates the notes ref without checking its old value, but I haven't verified that. The window is very small.
+- **Trust (by design):** anyone who can push to `origin` can add attestations under any `person` name. That lowers that person's risk score, which can approve their push as `earned-trust` with no exam. This now applies team-wide and can't be undone. Worth listing in Known gaps.
+- **Privacy:** attestations (names, file paths, scores, review IDs) are published to `origin` automatically after every exam. On a public repo that makes them public.
+- **Fog polling:** if the web UI's live event stream drops, it polls `/v1/fog` every 2s, and each poll now does a network fetch.
+- **Scope of the push is correct:** it pushes only `refs/notes/viva`, only to `origin`, with `--no-verify` (no hook recursion; the PR's rejecting-hook test covers this) and `--no-follow-tags`. Adding `--recurse-submodules=no` to the push would be a minor extra.
+
+**Checks:** install OK. Run serially, `pnpm check` passed: typecheck, 123/123 tests, 6/6 evals. My first run, alongside #44, had two failures, which look load-related: the e2e push hit its 10s timeout, and `exam.test.ts` is flaky.
+
+**Conflicts with main:** only `apps/vivad/src/app.test.ts`. That conflict comes from the base stack (`queue/5-skip` hits the same conflict on its own); this PR adds none.
+
+## #44 demo resilience — MERGE AFTER FIXES (one small fix)
+
+**Blocking**
+
+1. **Network errors no longer try the fallback model.** `resilient.ts:15-19`: `isCapacityError(new TypeError("fetch failed"))` returns false, so a DNS failure or connection reset throws straight away. It returns a plain 500, not the labelled 503, and never tries `GEMINI_FALLBACK_MODEL`.
+   - Before this PR, the same setup did try the fallback model on network errors (`GeminiProvider(..., fallbackModel)` caught fetch failures and moved to the next model).
+   - **Confirmed with a stub test:** the fallback is called 0 times.
+   - Pushes still fail open. But this is a regression in the exact case the PR is meant to handle, such as venue wifi dropping.
+   - **Fix:** treat a fetch `TypeError` (or `cause.code` such as `ECONNRESET`, `ENOTFOUND`, `ETIMEDOUT`) as a capacity error, and add a test.
+
+**What I verified as safe**
+- **Opt-in:** the cache does no I/O unless `VIVA_LLM_RECORD` or `VIVA_LLM_REPLAY` is set. `.viva/cache/` is gitignored, writes are atomic with 0600 permissions, and nothing is logged.
+- **Cache key:** it covers provider id, model, stage name, system prompt, user prompt (which includes the transcript) and the full JSON schema. Replay re-validates against the current zod schema, and fallback results are never cached.
+- **Errors surface:** checks and grading use `Promise.all`, so a failed model call can't be silently dropped. `ModelUnavailableError` becomes a 503, which the gate treats as ≥500 and fails open; `runExam` rethrows correctly.
+- **Gates:** prechecks and the injection scan run before any model call, so hard gates are untouched. There is no automatic mock fallback, and `MeteredProvider` still counts replayed tokens.
+
+**Non-blocking**
+- **Cache folder (`app.ts:40`):** by default it is `.viva/cache` in whatever directory the daemon was started from. Started inside another repo, the cache (model output about that code) isn't gitignored there. A planted cache file with a matching key is replayed as trusted (confirmed), and the key for check prompts can be computed from the diff. Default it to the Viva checkout, or require `VIVA_LLM_CACHE_DIR`.
+- **Interaction with #43:** grades from replay create real attestations, and nothing marks an individual review as replayed (only `/v1/health` shows a running total). Once #43 is merged, a rehearsal in the README's "disposable copy" would publish those attestations to the team's `origin`. The README should say to remove `origin` in that copy.
+- **Demo caveat:** offline replay only matches word-for-word identical answers, so spoken answers will miss the cache. Each miss returns a 503 and the push goes through unexamined (fail open).
+
+**Checks:** install OK. On a fresh serial run, `pnpm check` passed: typecheck, 136/136 tests, 6/6 evals. Earlier runs failed only on the load-sensitive e2e timeout and the `exam.test.ts` flake. That test passes 3/3 on its own, and this PR doesn't touch it.
+
+**Conflicts with main:** `README.md` (a "Demo day" section next to main's evals text; keep both), `apps/vivad/src/app.ts` (`onError`: keep the `ModelUnavailableError` branch and main's log line) and the inherited `app.test.ts`.
+
+**Compatibility with PR #3:** no clash. Main's `gemini.ts` only adds an optional `retryRateLimits = true` parameter at the end, so `new GeminiProvider(key, model)` still compiles. I resolved the conflicts in a scratch branch: the merged tree typechecks, and the 56 model-provider and daemon (`app.test.ts`) tests pass.
+
+---
+
+Delegated task node:delegated-task:command%3Amcp%3Af9010e19-eb5e-4ec0-a950-6853cf3b280f%3Adelegate-task%3A18ee2d36-d0ef-4323-881f-eaa3510cd2d5 (Integrate #45 #46 with main (Opus)) [completed]:
+Both PRs are up to date with main and pushed as normal merges, with no force-push. With no key set, `env -u VIVA_LLM -u GEMINI_API_KEY pnpm check` passes on both: 235 tests and 6/6 evals on #45, 249 tests and 11/11 evals on #46.
+
+#47 isn't merged yet, so I merged `origin/fix/empty-exam-pass` into #45 as well.
+
+**#45 (now targets main):**
+- **`app.ts`:** kept #51's order: write the receipt, mark the review complete, then the ledger, then record it. This PR saves passed answers so they can be written to memory; that now happens right after the receipt is written, not before it. That is the only behaviour change. If the receipt write fails, nothing can be saved, and nothing is recorded either.
+- **`app.test.ts`:** combined the imports from all three branches and kept every test.
+- **`exam.test.ts` and the web `client.test.ts`:** kept the new tests from both sides.
+- **Flaky test (test-only change):** after the merge, #45's own "offers to save after a pass" test failed once under the full #46 suite run, though it passed 3/3 run alone. The Enter key was sometimes lost under load. I changed the test to send its input through `act()`, as main's exam tests already do. It is a separate commit on #45.
+
+**#46 (still based on #45's branch):**
+- **`checks.ts`:** kept main's session token budget, numbered diff and the "requested" relabelling. Added #46's step that skips the direction check when there's no memory, and its memory-only context.
+- **`review.ts`:** kept main's budgeted session loading, then memory read at the push's base and passed to the checks. Direction claims still get asked first and always, up to `maxQuestions`. #7's planner and #47's error when no usable question is left are unchanged.
+- **`mock.ts`:** kept the direction stand-in, using main's token estimate. Its diff parser still works on numbered diffs.
+- **`evals/run.ts`:** took main's runner and added the direction evals beside the offline smoke checks. All eval cases from both sides are kept.
+- **`app.test.ts`:** merged cleanly.
+
+Each PR body now has an "Integrated with main" note.
+
+**Uncertain:** main's session budget doesn't count the memory text that only the direction check receives, up to about 4k tokens. At the default 60k cap this fits in the 10% kept back for the exam plan. At a much smaller cap it could push the plan over budget, and the push would then be let through unchecked rather than blocked. I didn't change this, because fixing it would be a behaviour change beyond the merge.
+
+PR https://github.com/aspekts/viva/pull/45, head 0d8c70d71ed4d685d71f09b1b6f46b508c41adc0, checks and reviews: CI passed on ubuntu and macos, windows still running, CodeRabbit neutral; no review decision yet.
+PR https://github.com/aspekts/viva/pull/46, head 441b29f630e2dbbb8c5af2618bcf1b387acae621, checks and reviews: CI running on all three platforms, CodeRabbit skipped; no review decision yet.
+
+---
+
+Update on pull request #47 (https://github.com/aspekts/viva/pull/47), which T3 Code is watching for you:
+- 1 new comment:
+  - coderabbitai: "> [!WARNING] > ## Review limit reached > > Enable **[usage-based reviews](https://app.coderabbit.ai/settings/billing?tab=usage&orgId=5e453c3d-2efd-415e-9469-1d8021b5a0b7)** in Billing to review now..." https://github.com/aspekts/viva/pull/47#issuecomment-6713891842
+
+Look into each item and act on it as your task requires. This PR stays linked and watched, so do not link, watch, or list it again. End your turn when you are done, and T3 Code wakes you on the next change. When you hand the work back to the user, call unwatch_pull_request first so the thread returns to their inbox.
+
+---
+
+Update on pull request #50 (https://github.com/aspekts/viva/pull/50), which T3 Code is watching for you:
+- All 4 checks passed on 294426a.
+
+Look into each item and act on it as your task requires. This PR stays linked and watched, so do not link, watch, or list it again. End your turn when you are done, and T3 Code wakes you on the next change. When you hand the work back to the user, call unwatch_pull_request first so the thread returns to their inbox.
+
+---
+
+Update on pull request #47 (https://github.com/aspekts/viva/pull/47), which T3 Code is watching for you:
+- All 4 checks passed on 2598af4.
+
+Look into each item and act on it as your task requires. This PR stays linked and watched, so do not link, watch, or list it again. End your turn when you are done, and T3 Code wakes you on the next change. When you hand the work back to the user, call unwatch_pull_request first so the thread returns to their inbox.
+
+---
+
+Update on pull request #47 (https://github.com/aspekts/viva/pull/47), which T3 Code is watching for you:
+- The branch now conflicts with main.
+
+Look into each item and act on it as your task requires. This PR stays linked and watched, so do not link, watch, or list it again. End your turn when you are done, and T3 Code wakes you on the next change. When you hand the work back to the user, call unwatch_pull_request first so the thread returns to their inbox.
+
+---
+
+Update on pull request #54 (https://github.com/aspekts/viva/pull/54), which T3 Code is watching for you:
+- 1 new comment:
+  - coderabbitai: "> [!WARNING] > ## Review limit reached > > Enable **[usage-based reviews](https://app.coderabbit.ai/settings/billing?tab=usage&orgId=5e453c3d-2efd-415e-9469-1d8021b5a0b7)** in Billing to review now..." https://github.com/aspekts/viva/pull/54#issuecomment-6714106825
+
+Look into each item and act on it as your task requires. This PR stays linked and watched, so do not link, watch, or list it again. End your turn when you are done, and T3 Code wakes you on the next change. When you hand the work back to the user, call unwatch_pull_request first so the thread returns to their inbox.
+
+---
+
+Update on pull request #54 (https://github.com/aspekts/viva/pull/54), which T3 Code is watching for you:
+- All 4 checks passed on 1bcd527.
+- The branch now conflicts with main.
+
+Look into each item and act on it as your task requires. This PR stays linked and watched, so do not link, watch, or list it again. End your turn when you are done, and T3 Code wakes you on the next change. When you hand the work back to the user, call unwatch_pull_request first so the thread returns to their inbox.
+
+---
+
+Update on pull request #47 (https://github.com/aspekts/viva/pull/47), which T3 Code is watching for you:
+- 1 new comment:
+  - coderabbitai: "> [!WARNING] > ## Review limit reached > > Enable **[usage-based reviews](https://app.coderabbit.ai/settings/billing?tab=usage&orgId=5e453c3d-2efd-415e-9469-1d8021b5a0b7)** in Billing to review now..." https://github.com/aspekts/viva/pull/47#issuecomment-6713891842
+
+Look into each item and act on it as your task requires. This PR stays linked and watched, so do not link, watch, or list it again. End your turn when you are done, and T3 Code wakes you on the next change. When you hand the work back to the user, call unwatch_pull_request first so the thread returns to their inbox.
+
+---
+
+Update on pull request #47 (https://github.com/aspekts/viva/pull/47), which T3 Code is watching for you:
+- All 4 checks passed on ff30c44.
+
+Look into each item and act on it as your task requires. This PR stays linked and watched, so do not link, watch, or list it again. End your turn when you are done, and T3 Code wakes you on the next change. When you hand the work back to the user, call unwatch_pull_request first so the thread returns to their inbox.
+
+---
+
+Update on pull request #49 (https://github.com/aspekts/viva/pull/49), which T3 Code is watching for you:
+- 1 new comment:
+  - coderabbitai: "> [!WARNING] > ## Review limit reached > > Enable **[usage-based reviews](https://app.coderabbit.ai/settings/billing?tab=usage&orgId=5e453c3d-2efd-415e-9469-1d8021b5a0b7)** in Billing to review now..." https://github.com/aspekts/viva/pull/49#issuecomment-6713970784
+
+Look into each item and act on it as your task requires. This PR stays linked and watched, so do not link, watch, or list it again. End your turn when you are done, and T3 Code wakes you on the next change. When you hand the work back to the user, call unwatch_pull_request first so the thread returns to their inbox.
+
+---
+
+Delegated task node:delegated-task:command%3Amcp%3Af9010e19-eb5e-4ec0-a950-6853cf3b280f%3Adelegate-task%3Ab5e32b4c-a796-4200-9ac9-4048fc31fbcf (Fix #44 demo resilience review (Sol)) [completed]:
+Pushed fixes for network fallback, cache isolation and rehearsal documentation after merging `origin/main`. Updated the PR body; per-review replay labels are listed as a follow-up.
+
+Local checks passed: 270 tests and offline evals. CI queued; no new review. Live models and Windows runtime remain unverified.
+
+PR https://github.com/aspekts/viva/pull/44, head c844c33732dee164aebda13a732ccd00bc0de2ed, checks and reviews: local passed, CI queued, review pending.
+
+---
+
+Delegated task node:delegated-task:command%3Amcp%3Af9010e19-eb5e-4ec0-a950-6853cf3b280f%3Adelegate-task%3A4b85abb9-c32d-423f-b904-94dc9c2bc073 (Re-review #45 #46 integrated (Sol)) [completed]:
+**[#45](https://github.com/aspekts/viva/pull/45), `0d8c70d`: SAFE TO MERGE** — already merged according to GitHub.
+
+- No blocking findings. Symlink regressions passed, including the nested folder case; the outside directory remains empty.
+- Ordering is safe: immediately after the durable receipt, `app.ts:147` retains answers **in RAM**. Markdown saving happens only through the opt-in endpoint. Save failure cannot change the verdict; explanation text never enters attestations, receipts or error logs.
+- `pnpm install`: passed. Requested offline `pnpm check`: **exit 0**, 235 tests, 6/6 smoke assertions.
+
+**[#46](https://github.com/aspekts/viva/pull/46), `441b29f`: MERGE AFTER FIXES**
+
+One blocking finding:
+
+- **P1 — Selected direction claims can still escape examination.** `packages/engine/src/pipeline/review.ts:128` accepts the planner’s result without verifying direction coverage. `pipeline/plan.ts:55–62` accepts any nonempty subset of selected claims. Independently reproduced: selected `[direction-1, behaviour-change-1]`; a schema-valid planner response asked only `behaviour-change-1`; answering it produced **`approve / exam-passed`**, without examining the reversal. Validate coverage of selected direction IDs and regenerate or provide a fallback for missing questions. Add a regression covering this partial-plan response.
+
+Other results:
+
+- Same-ID replacement and a 16-entry flood cannot affect base retrieval; regression tests passed.
+- A requested, below-threshold reversal reaches the exam with the normal mock planner. The threshold fix holds; the remaining gap is downstream.
+- **Budget gap: real, nonblocking for the hackathon.** Offline metering of system + user text reproduced a roughly 1,000-line change with bounded session context: short memory completed at **59,019 tokens**; long memory exhausted the meter at **61,408**, throwing before planning. The hook fails open: no exam-pass receipt or ledger write. Parallel checks can already overspend before the meter notices. Reserve memory and numbered-context costs before fitting the session. Also, “about 4k” is not a strict bound: only explanations are truncated, not other memory fields.
+- `pnpm install`: passed. Requested offline `pnpm check`: **exit 0**, 249 tests, 11/11 smoke/direction assertions.
+
+**Integration:** no main protections reverted. The requested first diff is now empty because #45 merged. Comparing against pre-#45 main and reviewing the second diff confirms preservation of #47’s three guards and policy-2 receipts, #51’s ordering/timeouts/escape stripping/realpath fix, #48’s bounded streaming, and #7’s planner and bounded session context.
+
+No source edits, remote writes or live model calls. Tests ran in temporary copies without `.env`.
+
+---
+
+Delegated task node:delegated-task:command%3Amcp%3Af9010e19-eb5e-4ec0-a950-6853cf3b280f%3Adelegate-task%3A1ef906cf-9b2f-4aa3-932c-868e07f50cde (Fix #43 ledger sync review (Sol)) [completed]:
+Fixed all six findings, pushed, and updated the PR body.
+
+`pnpm install` and the key-free `pnpm check` passed: 249 tests and mock evals. Real GitHub notes transport and Windows execution remain unverified.
+
+PR https://github.com/aspekts/viva/pull/43, head 85f36be24fcc5835c3d1e0dd39fa25710734e5ae, checks and reviews: local checks passed; CI queued; fresh independent review pending.
+
+---
+
+Update on pull request #49 (https://github.com/aspekts/viva/pull/49), which T3 Code is watching for you:
+- All 4 checks passed on d257984.
+
+Look into each item and act on it as your task requires. This PR stays linked and watched, so do not link, watch, or list it again. End your turn when you are done, and T3 Code wakes you on the next change. When you hand the work back to the user, call unwatch_pull_request first so the thread returns to their inbox.
+
+---
+
+Delegated task node:delegated-task:command%3Amcp%3Af9010e19-eb5e-4ec0-a950-6853cf3b280f%3Adelegate-task%3Abff1940e-46dd-4fa7-b655-3425ba61e705 (Re-review #44 fixes (Opus)) [completed]:
+## Verdict: SAFE TO MERGE (PR #44 at c844c33)
+
+No blocking findings. All three fixes from the earlier review hold, the merge reverted nothing from main, and `pnpm check` passes with no key set.
+
+### 1. The three fixes
+- **Network errors now fall back.** `isCapacityError` (`packages/engine/src/llm/resilient.ts:16`) now catches network errors and timeouts. My own stub tests (deleted afterwards) all passed:
+  - Each network error class, including the real `AbortSignal.timeout` reason, counts as a capacity error. Unrelated TypeErrors and zod errors don't.
+  - A network error goes to replay first: an entry recorded while the primary call was running is replayed, and the fallback is never called.
+  - With nothing to replay, it goes to the fallback model, then to `ModelUnavailableError`, which the server returns as a 503 labelled `model-unavailable`.
+  - Wired through `createProvider` with a stubbed `fetch` that always fails: the primary model is tried exactly twice, the fallback once, and health reports `gemini+fallback`.
+- **The cache can't be steered into another repo.** The default is now resolved from the daemon module, like `CHECKS_DIR` (`apps/vivad/src/app.ts:51`). I confirmed it resolves to `<checkout>/.viva/cache`, which is gitignored. A matching file planted in the launch directory is ignored, and a tampered entry (wrong type or negative token counts) is treated as a miss. Only an explicit `VIVA_LLM_CACHE_DIR` reads elsewhere, and the README says to use only a cache you control.
+- **The README is accurate.** It says to remove `origin` in the rehearsal copy, that offline answers must match word for word, and that a miss returns a 503 so the push goes through unexamined. I checked that last claim in `cli.ts:77-91`: a 503 when starting a review or submitting answers fails open.
+
+### 2. Nothing from main reverted
+`git diff origin/main origin/issue-16-demo-resilience` only adds lines, across 6 files. It doesn't touch the pipeline, `client.ts`, `cli.ts`, `decisions.ts`, contracts or checks, so #47 and #48 are intact. #51's order (receipt, then mark complete, then append to the ledger) is intact, as are the client timeouts (15s and 120s). The `onError` safe log line is unchanged; the PR only adds the 503 branch ahead of it.
+
+### 3. Opt-in only
+- **No automatic mock grading:** mock is only used when `VIVA_LLM` isn't `gemini`.
+- **No cache I/O unless enabled:** without record or replay there is no cache directory, and no `.viva` was created during my tests.
+- **Zero model calls offline:** replay-only made no `fetch` calls even with a key and a fallback model set.
+- **Nothing from the cache in logs:** the 503 path doesn't log, and nothing in `resilient.ts` writes to the console.
+- **Replay is re-validated by zod:** `safeParse`, with token counts checked as non-negative integers.
+- **Hard gates untouched:** the engine has no `catch` around model calls, so a model failure can't turn into a pass.
+
+### Notes (non-blocking)
+- **Demo risk:** prompts include the ledger and session transcript. If the rehearsal copy's git notes or Entire transcript differ from the recording run, every lookup misses and the push goes through unexamined. The README's "rehearse the whole path" covers this, but it's the most likely way the demo goes wrong.
+- **Slow fallback:** in the worst case one model call takes about 53s with a fallback. Several sequential grades could pass the CLI's 120s submission limit, which blocks with a "retry" message rather than failing open. The old built-in Gemini fallback had the same timing, so this isn't a regression.
+- **Health label:** `/v1/health` shows cumulative use since startup, not per review. The author's follow-up for per-review replay labels is reasonable.
+
+### Check results
+- `pnpm install`: OK.
+- `env -u VIVA_LLM -u GEMINI_API_KEY pnpm check`: exit 0. Typecheck passed, 16 files and 270 tests passed, 6/6 mock smoke checks passed, and the offline claim matrix ran.
+
+I made no pushes, comments or approvals. The worktree's branch had been renamed during the session, so I restored it to `t3/review-demo-resilience`, which points at the commit the session started on.
+
+---
+
+Delegated task node:delegated-task:command%3Amcp%3Af9010e19-eb5e-4ec0-a950-6853cf3b280f%3Adelegate-task%3A4d44f0e1-6526-495f-a0eb-363bf08ec249 (Re-review #43 fixes (Opus)) [completed]:
+## Verdict: MERGE AFTER FIXES
+
+Five of the six earlier findings are fixed. The first one is only partly fixed: the same failure (one teammate line breaks the Fog for the whole team) still happens through a different input. The fix is one line.
+
+### Blocking
+
+**1. A teammate line that passes the schema but has an invalid date still makes `/v1/fog` return 500 for everyone, permanently.**
+- **Where:** `packages/engine/src/ledger/mastery.ts:8`. The PR's line-skipping is at `packages/engine/src/ledger/notes.ts:21-24`.
+- **Why:** The `Attestation` contract only requires `at` to be a string. So a line like `{"person":"M","file":"pay.ts","symbol":"pay","codeHash":"x","score":1,"at":"yesterday","reviewId":"r"}` passes `safeParse`. Then:
+  - `new Date("yesterday")` gives NaN, and `Math.max(0, NaN)` is NaN, so mastery is NaN.
+  - `fog` becomes NaN, and `FogMap.parse` throws, so the request returns 500.
+- **Repro:** I wrote a throwaway test using clone A, then sync A, then sync B. The Fog request on B returned **500** with a ZodError. Review creation still returned 200, because a NaN mastery never counts as above 0.5, so no false "earned-trust" approval.
+- **Impact:** Before this PR only the daemon wrote ledger lines, and it always writes valid ISO dates. Now any teammate's line is union-merged into everyone's notes and can never be removed, so one hand-edited or forged line breaks the Fog permanently. That is the same failure the author says is fixed.
+- **Fix:** In `readLedger`, also skip rows where `!Number.isFinite(Date.parse(parsed.data.at))`. That keeps the PR's promise of no contract changes. The alternative is `z.string().datetime()` in the contract. Add a regression test next to the existing malformed-line test.
+
+### Earlier findings, checked again
+1. **Malformed JSON:** Fixed. Each line is parsed inside a try/catch, and the regression test gets a 200 from the Fog and a working review. The bad-date gap above remains.
+2. **Deadlines and blocking:** Fixed.
+   - Only fetch and push have a deadline: a 20s budget shared between them, enforced both by execFile's `timeout` and by a Promise.race.
+   - `notes merge`, `remote get-url`, `config` and `for-each-ref` have no deadline.
+   - Review start, Fog loads and exam submission all start the sync with `void` and never wait for it.
+   - Background refreshes are limited to once a minute per Git common directory (resolved to its real path), and a new one never starts while another is running.
+3. **SSH settings:** Fixed. The default `GIT_SSH_COMMAND` is only set when `GIT_SSH_COMMAND`, `GIT_SSH` and `core.sshCommand` are all unset.
+4. **Outer deadline:** Fixed. It returns even when the underlying call never settles, and the later rejection is caught by the race, so there's no unhandled rejection.
+   - **Stale lock:** I created a stale `refs/notes/viva.lock`. Sync failed safely and returned in 181ms. A local append throws, but that was already true before this PR, and the README documents it.
+5. **`--recurse-submodules=no`:** Fixed, and the tests check for it.
+6. **Docs:** Fixed. "Known gaps" says anyone who can push can forge attestations and earn "earned-trust" approvals, and that attestations are published to origin automatically.
+
+### Notes (not blocking)
+- **The CLI and daemon can still lose each other's writes.** Git doesn't check a notes ref's old value before overwriting it. I ran 30 `git notes append` processes at once on one commit: all exited 0, but only **8 of 30** lines survived. Inside the daemon, the per-process lock prevents this. But `viva ledger sync` from the CLI runs its merge in a separate process. If it lands within milliseconds of the daemon appending an exam's attestations, those attestations can be lost silently. The chance is low. Either document it, or have the CLI sync go through the daemon.
+- **Merge edge cases work:** I confirmed a `cat_sort_uniq` merge works when the local notes ref doesn't exist yet, and when the two clones' notes have no shared history. Remote notes are never force-pushed, and the union merge never drops entries.
+- **Push scope:** Only `refs/notes/viva` is pushed, only to `origin`, with `--no-verify`, `--no-follow-tags` and `--recurse-submodules=no`, so the hook can't recurse and tags don't leak.
+  - The `viva gate` hook process never syncs, so syncing can't block or slow a push.
+  - No test or eval creates the app with the real sync against this repo: all test fixtures are temp repos with no `origin`, and the sync tests use local bare remotes.
+- **On Windows,** a killed `git fetch` may leave a stale `refs/viva/remotes/origin.lock`. Fetches would then fail quietly until someone removes it by hand. The general stale-lock text in "Known gaps" covers this.
+- **The merge with main reverted nothing.** origin/main (8029fb0, which includes #45, #47, #48 and #51) is an ancestor of the PR head, and the two merge cleanly. The diff against origin/main has 387 additions and 11 deletions. All the deletions are intended replacements, such as the "Ledger notes aren't pushed automatically yet" line in the docs. Nothing from #47, #51's ordering and timeouts, #48 or #45 was touched.
+  - The new `void ledgerSync(...)` call comes after `appendAttestations` and before `record`, so #51's decision ordering is unchanged.
+
+### Check results
+- `pnpm install`: OK.
+- `env -u VIVA_LLM -u GEMINI_API_KEY pnpm check`: **exit 0**. Typecheck passed, 17 test files and 249 tests passed, 6/6 mock smoke assertions passed, and the mock matrix ran.
+- I deleted my throwaway tests and temp dirs, and the worktree is back on its branch at d257984 with no changes. Nothing was pushed, commented on or approved.
