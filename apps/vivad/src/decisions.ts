@@ -24,9 +24,11 @@ export async function decisionIdentity(request: ReviewRequest) {
 
 /**
  * Policy 2: before it, an exam plan with no questions could record exam-passed.
+ * Policy 3: before it, two questions sharing an ID could pass on one answer, and
+ * model-written question text reached the grader unfenced.
  * Older passes are examined again, while older failures and skips still stand.
  */
-export const DECISION_POLICY = 2;
+export const DECISION_POLICY = 3;
 
 export async function readDecision(dir: string, key: string): Promise<ReviewDecision | null> {
   try {

@@ -102,5 +102,6 @@ export async function planExam(
   });
   // A plan with no usable questions would grade as a pass, so it's a pipeline failure.
   if (questions.length === 0) throw new Error("exam plan asked about none of the risky claims");
-  return { questions };
+  // Answers are matched by ID, so the model must not choose them: duplicates would share one answer.
+  return { questions: questions.map((question, i) => ({ ...question, id: `q${i + 1}` })) };
 }

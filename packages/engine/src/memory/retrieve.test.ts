@@ -214,13 +214,14 @@ describe("the direction check", () => {
     const asked = review.plan!.questions;
     expect(asked.map((q) => q.claimId)).toEqual([reversal.id, review.claims.find((c) => c.check === "risky-a")!.id]);
     expect(asked[0]).toMatchObject({
-      id: `fallback-${reversal.id}`,
+      id: "q1",
       ask: "This change appears to reverse a recorded decision: You told us checking the card before sending it was deliberate, this change reverses it. Is that the right direction, and why?",
       location: reversal.location,
     });
 
     // Answering only the planner's question can't pass the exam.
-    const onlyOther = await submitAnswers(review, [{ questionId: "q1", transcript: "the payment is retried once more", mode: "typed" }], deps_);
+    // Questions are numbered in claim order, so the reversal is q1 and the planner's question is q2.
+    const onlyOther = await submitAnswers(review, [{ questionId: "q2", transcript: "the payment is retried once more", mode: "typed" }], deps_);
     expect(onlyOther.review.gate).toMatchObject({ verdict: "reject" });
   });
 
