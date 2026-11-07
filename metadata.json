@@ -1,0 +1,42 @@
+{
+  "cli_version": "0.13.1",
+  "checkpoint_id": "01M6VZCGV7A1E3HTH0ZS9XF13X",
+  "strategy": "manual-commit",
+  "branch": "docs/overnight-queue",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/APP_CONTRACT.md",
+    "docs/FRONTEND_HANDOFF.md",
+    "docs/OVERNIGHT.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2,
+    "cache_creation_tokens": 1420,
+    "cache_read_tokens": 169885,
+    "output_tokens": 1789,
+    "api_call_count": 1
+  },
+  "redaction": {
+    "replacements": 1,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 1,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
