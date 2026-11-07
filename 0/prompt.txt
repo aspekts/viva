@@ -1,0 +1,149 @@
+Delegated task node:delegated-task:command%3Amcp%3Af9010e19-eb5e-4ec0-a950-6853cf3b280f%3Adelegate-task%3Ae92b6527-791c-4ba4-a333-32746f6fc520 (Review PRs #3 and #5 (Opus)) [completed]:
+Both PRs were **already merged** before this review finished: #3 at 21:52 UTC and #5 at 22:03 UTC. So the verdicts below say whether each was safe to merge, and any findings become follow-up work. I found no blocking defects in either. The real problem is PR #7, below.
+
+## The real problem: #7's tuning never reached main
+
+#7 (`tuning/silent-decision`) was merged into `evals/live-matrix` at 21:53:04, 40 seconds after #3 had already merged that branch into main. Its commit `6693762` is not in `origin/main`, so 16 files and about 950 lines never landed. That includes `checks/failure-path.md`, `checks/silent-decision.md`, `evals/exam.ts`, and changes to `plan.ts`, `checks.ts`, `grade.ts`, `git.ts` and `docs/EVALS.md`. GitHub shows #7 as "MERGED", which hides this.
+
+A trial merge onto current main **conflicts** in `docs/ARCHITECTURE.md` and `packages/engine/src/pipeline/checks.ts`. It needs a new PR from `tuning/silent-decision` to main, with those two conflicts resolved by hand.
+
+#8 had the same problem, but its content has since landed through #42, so it's fine.
+
+## PR #3: live eval matrix
+**Verdict: SAFE TO MERGE** (already merged). No blocking findings.
+
+- `pnpm check` on the PR head (`63a336e`), with no key and the mock provider: **passed**, 37 tests and 6/6 smoke assertions. CI passed on Linux, macOS and Windows.
+- The rules hold:
+  - Model access goes through `runChecks` and `LlmProvider`, with the production zod schemas and `untrusted()` wrappers.
+  - The deterministic prechecks and injection scan run before any model call.
+  - The report keeps only hashes, counts and error categories (`safeError` drops error bodies).
+  - Production Gemini behaviour is unchanged; `retryRateLimits` defaults to true.
+  - The live-skip test mocks `loadEnvFile`, so a local `.env` can't trigger real calls during `pnpm check`.
+- The PR body's numbers match `docs/EVALS.md`: 4/5 on fully observed cases, 5/12 lower bound, 17 cells plus one 429. `checks/` was not touched, so "no prompts tuned" is true.
+- Non-blocking: the mock matrix prints MISS/FP rows and "75% FP". That's expected for the mock, but readers could mistake it for a regression.
+
+## PR #5: terminal exams and IDE/agent push handoff
+**Verdict: SAFE TO MERGE** (already merged). No blocking findings.
+
+- `pnpm check` on the PR head (`a7c73f9`), with no key:
+  - **First run failed 1 of 109.** `exam.test.ts` ("takes typed answers…") timed out its default 1s `vi.waitFor` while the #3 suite ran at the same time.
+  - The test then passed 5/5 on its own, and a full rerun **passed 109/109** with 6/6 evals.
+  - So the test is flaky under load, not broken. CI passed on Linux, macOS and Windows.
+- What I confirmed:
+  - The daemon is still bound to `127.0.0.1` (`server.ts:5`).
+  - Hard gates are refused twice: by the `/skip` route and by the engine's `skipWithDebt`. `/answers` requires the `awaiting-exam` stage, and that holds after a restart.
+  - Saved decisions contain only an identity hash, the review ID, the gate and a timestamp, so no prose reaches disk.
+  - Every failure while creating a review still lets the push through.
+
+Non-blocking notes, most important first:
+1. **Silent no-op when the CLI is run through a symlinked path** (`cli.ts`, the `resolve(process.argv[1]) === fileURLToPath(import.meta.url)` guard). I confirmed it: `tsx /tmp/…/cli.ts` exits 0 with no output (macOS `/tmp` is a symlink), while the real path prints the usage line. The installed hook uses a relative path, so it isn't affected, but any absolute symlinked invocation quietly disables the gate. Fix: compare `realpathSync` of both sides, and add a test.
+2. **The daemon client's 15s timeout** (`client.ts:15`). If a live-Gemini review or grading call takes longer, it hits the "daemon unavailable" catch in `gate()` and the push goes through, even after the developer typed answers. That's within the fail-open policy, but a slow grader becomes a bypass. Consider a longer timeout for `/answers`.
+3. **The terminal exam has no timeout.** An agent that has a terminal but isn't in `AGENT_ENV` (for example the Gemini CLI or Copilot) would hang the push indefinitely.
+4. **Model text is printed to the terminal unescaped.** Question text and missed concepts go straight to Ink and to `viva feedback`, so terminal escape codes in model output would be interpreted. Low risk; strip control characters.
+5. **Double attestations if saving the decision fails.** In `/answers`, if `writeDecision` throws after attestations were appended, the review stays `awaiting-exam`, so a retry can append them again. Also, `/skip` doesn't check the stage (it can overwrite an `exam-passed`), and it returns a misleading "cannot be skipped" message when a submission is in progress.
+6. The `/feedback` route has no loopback-host check, unlike `/code`. The data is low-sensitivity and review IDs are UUIDs, but it's worth adding for consistency.
+7. Windows console input (`CONIN$`) is still untested on a real Windows machine, as the PR body says. CI only proves the fallback path.
+
+## Conflicts and merge order
+- The order that actually happened was #3 → #4 → #5 (#5 merged main back into itself first), then #42. Main is green on CI at `c43e0e9`. Since #5's head already included #3 and #4, the passing check on that head shows they combined cleanly.
+- The order was right: #3 and #5 didn't conflict, and merging #3 first was the clean choice.
+- What's left: re-land #7 against main (two conflicts above). The rest of the stack on #5 (#35, #37, #38, #39) is now based on `queue/*` branches, so make sure each one actually ends up targeting main rather than merging into a branch that has already landed, which is how #7 got lost.
+
+I made no pushes, comments or merges. The two scratch worktrees I created are removed and this worktree is unchanged.
+
+Delegated task node:delegated-task:command%3Amcp%3Af9010e19-eb5e-4ec0-a950-6853cf3b280f%3Adelegate-task%3A94cd0e5b-8e0b-4d54-b395-121bd7e3c835 (Review PRs #4 and #7 (Sol)) [completed]:
+GitHub reports both PRs **already merged**. These verdicts apply to reviewed heads `356f47a` (#4) and `6693762` (#7).
+
+**[PR #4](https://github.com/aspekts/viva/pull/4): MERGE AFTER FIXES**
+
+- **P2 — Unbounded transcript retention:** `packages/engine/src/sources/entire.ts:125,262` retains every passage before applying the budget at line 265. Streaming does not bound memory. Confirmed with a throwaway fixture: 117 MB of assistant text peaked at approximately 132 MB heap despite a 100-token budget and 350-character output. Larger checkpoints can exhaust daemon memory. Bound retained bytes/passages during ingestion, cap individual input lines, and add a regression test.
+- Otherwise, session text is fenced with `untrusted()`, missing/malformed checkpoints fall back safely, and the inspected error/ledger paths prevent arbitrary transcript prose from escaping.
+- **Validation:** `pnpm install` and the requested offline `pnpm check` passed: **67 tests, 6/6 mock smoke assertions**, typecheck and mock matrix.
+
+**[PR #7](https://github.com/aspekts/viva/pull/7): MERGE AFTER FIXES**
+
+- **P1 — Discarded questions can become a passed exam:** `packages/engine/src/pipeline/plan.ts:55–61` silently drops questions with unknown claim IDs. If all IDs are invalid, it returns an empty plan. Confirmed through `submitAnswers`: zero questions plus zero answers produces **`endorse / exam-passed`**. Validate coverage of the selected claims; use a deterministic fallback or the existing fail-open error path instead of recording an exam pass. Add an end-to-end regression test.
+- Injection fences remain intact. All **17 original fixture hashes match #3**, with 11 added cases. The committed report supports the final live-matrix numbers; earlier runs are documented but cannot be independently reconstructed from retained hashes alone. Mock results are clearly distinguished. The acknowledged **5/11 right-answer pass rate** remains a grading limitation.
+- **Validation:** `pnpm install` and offline `pnpm check` passed: **62 tests, 6/6 mock smoke assertions**, typecheck and mock matrix.
+
+**Trial merges:** #4 with current `origin/cli/terminal-exam` merged cleanly. #7 through `origin/evals/live-matrix` with #4 conflicted only in `checks.ts` imports and `ARCHITECTURE.md`; both are straightforward. Preserve both `estimateTokens` and `numberDiff`, plus the accurate reader/eval documentation.
+
+Recommended integration order: **#3 → fixed #4 → #5 → fixed #7**, then rerun `pnpm check`.
+
+No remote writes or live model calls. Scratch branches/tests were removed; the original branch is restored with a clean working tree.
+
+Delegated task node:delegated-task:command%3Amcp%3Af9010e19-eb5e-4ec0-a950-6853cf3b280f%3Adelegate-task%3A238a9ab5-29e7-410f-87ef-5af3be84bd3e (Review Kay's PRs #40 #41 (DeepSeek)) [completed]:
+Review complete. Read-only respected (no pushes, comments, approvals, or merges). Scratch worktrees and local PR branches deleted.
+
+# PR #40 — `feat/issue-10-fog-map`
+## Verdict: SAFE TO MERGE
+
+**Blocking findings:** none. I found no contract violation: types come from `@viva/contracts`, `getFog` parses with `FogMap`, the call goes through `client.ts`, and `?mock` works. Empty map, zero/negative/NaN/Infinity sizes, duplicate keys and degenerate bounds are all handled.
+
+**Non-blocking notes**
+- `apps/web/src/fog/FogView.tsx:32` — every tile is `tabIndex={0}` but non-interactive, so a large map becomes dozens of dead tab stops. Prefer one focusable summary/list, or make tiles real buttons if they will act.
+- `apps/web/src/fog/FogView.tsx:64` — layout is frozen after load; no polling/diff animation (priority 3 from the handoff, out of scope here).
+- `apps/web/src/styles.css` `.fog-map` — `calc((100vh - 11rem) * 16 / 9)` goes negative below ~177px viewport height, making the width declaration invalid on tiny windows. Cosmetic.
+- `getFog()` still omits `?repo` (pre-existing contract gap, not introduced here).
+
+**Checks/build**
+- Branch: `pnpm check` passed (36 tests, 6/6 evals), `@viva/web build` passed.
+- Trial merge into current `origin/main`: typecheck 0, 141 tests pass, 6/6 evals, build passes.
+- Treemap fuzz: 20,000 random weight sets — no overlaps, all rects finite/in-bounds, exact area coverage, no hangs.
+- GitHub CI: ubuntu, windows, macos all SUCCESS.
+
+**Conflict status:** merges cleanly into `origin/main`. Overlaps #41 only in `docs/AI_DISCLOSURE.md` (both append a bullet) — mechanical conflict if both land.
+
+---
+
+# PR #41 — `feat/issue-12-typed-exam`
+## Verdict: MERGE AFTER FIXES
+
+**Blocking finding**
+
+1. **Merge conflict with current `main` in `apps/web/src/exam/ExamRoom.tsx:1-11` (import band).** Both PRs touched the same imports; GitHub reports `mergeable: UNKNOWN`, trial merge shows one content conflict.
+   - Failure scenario: a naive one-side resolution breaks the build. Taking "ours" loses `ReviewResult`; taking "theirs" loses `import { QuestionCode }` while the merged body still renders `<QuestionCode reviewId={review.id} location={q.location} />` (`origin/main` line 39) → `TS2304: Cannot find name 'QuestionCode'`, and PR #8's code highlighting silently regresses.
+   - Fix: rebase on `main` and keep the union:
+     ```ts
+     import type { Review } from "@viva/contracts";
+     import { getReview, isMockMode, submitAnswers } from "../api/client";
+     import { buildAnswers, countUnanswered, type Drafts } from "./answers";
+     import { loadErrorMessage, submitErrorMessage } from "./messages";
+     import { pushAllowed } from "./verdict";
+     import { QuestionCode } from "./QuestionCode";
+     ```
+     Keep both `ReviewResult` and main's `<QuestionCode>` line. After this the merged tree typechecks, tests, and builds.
+
+**Non-blocking notes**
+- `apps/web/src/exam/ExamRoom.tsx:8-43` — no skip affordance anywhere. The hard-gate rule is satisfied (never offers skip when `gate.skippable === false`), but a skippable blocked gate (`exam-failed`, `too-large`) also offers no escape. `skipReview` doesn't exist in `client.ts` on main yet, so this is expected follow-up, not a regression.
+- `apps/web/src/exam/ExamRoom.tsx:96` — textareas are `disabled` while submitting. Brief and matches the handoff's "disable while in flight", but the fairness rule says typing must always work; disabling only the button would be safer.
+- `apps/web/src/api/mock.ts:6` — `mockReview.plan.questions` assumes a non-null plan. Fine for the current fixture; use `mockReview.plan?.questions ?? []` so a future done/docs-only fixture can't throw.
+- `apps/web/src/api/client.ts:10` — `MOCK` reads `location` at module scope. Any future node-env test importing `client.ts` throws; today's tests correctly avoid it.
+- `apps/web/src/App.tsx:23-28` — both views stay mounted (good for drafts), but the hidden `FogView` still fetches `/v1/fog` on every exam page load.
+- `ExamRoom.tsx` 409 message says reload but leaves Submit enabled.
+
+**Checks/build**
+- Branch: `pnpm check` passed (43 tests, 6/6 evals), `@viva/web build` passed.
+- Trial merge into `origin/main` (conflict resolved as above): typecheck 0, 148 tests pass, build passes. Evals not rerun post-merge (web-only change).
+- GitHub CI: ubuntu, windows, macos all SUCCESS. CodeRabbit was rate-limited and did not review this PR.
+- Verified: rubric (`mustMention`) is not rendered before submission; `pushAllowed` is exactly `approve || endorse`; every response is zod-parsed; no `fetch` outside `client.ts`; empty `plan`, empty questions, missing id, 404 and 409 paths all render without crashing.
+
+**Conflict status:** conflicts with `origin/main` in `ExamRoom.tsx` only (mechanical import union, but must preserve both `ReviewResult` and `QuestionCode`). With #40: same `ExamRoom.tsx` conflict plus `docs/AI_DISCLOSURE.md` (trivial, keep both bullets). Combined resolved tree: typecheck 0, 157 tests pass, build passes.
+
+---
+
+**Bottom line:** #40 is safe to merge now. #41 needs a rebase/conflict resolution that keeps both main's `QuestionCode` integration and the new `ReviewResult`; its code itself passed every check I threw at it. Merging #40 first is fine; #41 will then need the `ExamRoom.tsx` and `AI_DISCLOSURE.md` resolutions.
+
+Delegated task node:delegated-task:command%3Amcp%3Af9010e19-eb5e-4ec0-a950-6853cf3b280f%3Adelegate-task%3Aa6f7a313-b932-42b3-9a7c-53a08cb99372 (#17 Sync the ledger (Sol)) [completed]:
+Implemented bounded ledger fetch/union merge, background publication, one retry after rejection, recursion prevention, and `viva ledger sync`. Added cross-clone tests and documentation.
+
+`pnpm install` and key-free `pnpm check` passed: 123 tests, 6 mock evals. Real two-laptop transport and Windows execution remain unverified.
+
+PR https://github.com/aspekts/viva/pull/43, head b868c6bf2cd40b7db6578e3a836a0220b8e4fe8c, checks and reviews: local checks passed; CI queued; no reviews.
+
+Delegated task node:delegated-task:command%3Amcp%3Af9010e19-eb5e-4ec0-a950-6853cf3b280f%3Adelegate-task%3A31ecb304-be69-4547-ad9f-92e0067bdeaa (#16 Demo-safe model quota (Sol)) [completed]:
+Built opt-in validated recording/replay, offline mode, fallback ordering, labelled failures, and Demo day instructions. `gemini.ts` is unchanged; mock grading stays explicit.
+
+Required offline check passed: 136 tests and 6 evals. No live calls or live 429 were triggered; real quota and fallback availability remain unverified.
+
+PR https://github.com/aspekts/viva/pull/44, head 0827285c7e59a41bd5ae0f43e8b77d0d558fc244, checks and reviews: local checks passed; CI running; no reviews.
