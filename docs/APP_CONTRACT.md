@@ -207,7 +207,7 @@ Proposed, so Sophina can change it. The React app talks to ElevenLabs directly, 
 
 ## Mock mode
 
-Adding `?mock` loads `fixtures/mock/fog.json`, `fixtures/mock/review.json` and, with PR #8, `fixtures/mock/code.json` through the same schemas as live data. Submitting answers returns a pass.
+Adding `?mock` loads `fixtures/mock/fog.json`, `fixtures/mock/review.json` and, with PR #8, `fixtures/mock/code.json` through the same schemas as live data.
 
 Without `?mock` and without a `review` in the URL, the exam room shows an empty state instead of sample data. In mock mode, submitting blank answers returns a failed review with the missed rubric points, and answered questions return a pass.
 
