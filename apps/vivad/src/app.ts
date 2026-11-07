@@ -82,8 +82,9 @@ export function createApp(llm: LlmProvider = createProvider()) {
   });
 
   app.onError((error, c) => {
-    console.error(error);
-    return c.json({ error: error.message }, 500);
+    // Messages can quote model output or session text, so neither leaves here.
+    console.error(`vivad: request failed (${error.constructor.name})`);
+    return c.json({ error: "internal error" }, 500);
   });
 
   return app;
