@@ -82,3 +82,42 @@ describe("watch", () => {
     expect(refresh).not.toHaveBeenCalled();
   });
 });
+
+describe("reviews", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const daemon = (body: unknown) => {
+    const fetch = vi.fn(async () => new Response(JSON.stringify(body), { status: 200 }));
+    vi.stubGlobal("fetch", fetch);
+    return fetch;
+  };
+  const sample = async () => JSON.parse(JSON.stringify((await import("../../../../fixtures/mock/review.json")).default));
+
+  it("opens the newest live review, never sample data", async () => {
+    const live = { ...(await sample()), id: "live-review" };
+    const fetch = daemon([live, { ...live, id: "older" }]);
+    const { getLatestReview } = await client("");
+    expect((await getLatestReview())?.id).toBe("live-review");
+    expect(fetch).toHaveBeenCalledWith("/v1/reviews", undefined);
+  });
+
+  it("returns null, not the mock review, when the daemon has no reviews", async () => {
+    daemon([]);
+    const { getLatestReview } = await client("");
+    expect(await getLatestReview()).toBeNull();
+  });
+
+  it("fetches a review by ID from the daemon outside mock mode", async () => {
+    const fetch = daemon({ ...(await sample()), id: "a/b" });
+    const { getReview } = await client("");
+    expect((await getReview("a/b")).id).toBe("a/b");
+    expect(fetch).toHaveBeenCalledWith("/v1/reviews/a%2Fb", undefined);
+  });
+
+  it("uses sample data only in mock mode, with &empty for the empty state", async () => {
+    const fetch = daemon([]);
+    expect((await (await client("?mock")).getLatestReview())?.id).toBe("mock-review");
+    expect(await (await client("?mock&empty")).getLatestReview()).toBeNull();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+});

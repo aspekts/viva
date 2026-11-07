@@ -102,6 +102,9 @@ export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 200
     }
     const initial = await pending;
     const review = reviews.get(initial.id) ?? initial;
+    // A push of an already decided change counts as the newest review again.
+    reviews.delete(review.id);
+    reviews.set(review.id, review);
     if (latestRepo !== review.request.repoPath) {
       latestRepo = review.request.repoPath;
       // The Fog now maps another repo, even if neither repo itself changed.
