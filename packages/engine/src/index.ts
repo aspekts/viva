@@ -12,6 +12,7 @@ export * from "./pipeline/injection.js";
 export * from "./pipeline/prechecks.js";
 export * from "./pipeline/review.js";
 export * from "./pipeline/risk.js";
+export * from "./sources/entire.js";
 export * from "./sources/git.js";
 export * from "./sources/graph.js";
 export * from "./sources/session.js";

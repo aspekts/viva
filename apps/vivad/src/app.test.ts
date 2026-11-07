@@ -4,8 +4,7 @@ import { readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { FogMap, Review, ReviewCode, ReviewFeedback, VivaEvent } from "@viva/contracts";
-import { MockProvider } from "@viva/engine";
-import { fixtureRepo } from "../../../packages/engine/src/testing.js";
+import { fixtureRepo, MockProvider, type LlmProvider } from "@viva/engine";
 import { createApp } from "./app.js";
 
 const repos: string[] = [];
@@ -353,6 +352,20 @@ describe("vivad", () => {
       await events.close();
     });
 
+    it("cleans up a listener that disconnects before the stream opens", async () => {
+      const set = vi.spyOn(globalThis, "setInterval");
+      const clear = vi.spyOn(globalThis, "clearInterval");
+      const app = createApp(new MockProvider(), NO_FOG_POLL);
+      const responses = await Promise.all(Array.from({ length: 5 }, () => app.request("/v1/events")));
+      await Promise.all(responses.map((response) => response.body!.cancel()));
+      // All five shared one fog timer, which must stop once the last of them has gone.
+      const timers = set.mock.calls.flatMap((call, i) => (call[1] === NO_FOG_POLL.fogPollMs ? [set.mock.results[i]!.value] : []));
+      expect(timers).toHaveLength(1);
+      await vi.waitFor(() => expect(clear).toHaveBeenCalledWith(timers[0]));
+      set.mockRestore();
+      clear.mockRestore();
+    });
+
     it("stays quiet when a repo hasn't changed", async () => {
       const clear = vi.spyOn(globalThis, "clearInterval");
       const app = createApp(new MockProvider(), { fogPollMs: 20 });
@@ -440,5 +453,27 @@ describe("vivad", () => {
     const skipped = await post(app, `/v1/reviews/${review.id}/skip`, {});
     expect(skipped.status).toBe(200);
     expect(Review.parse(await skipped.json()).gate?.reason).toBe("skipped-with-debt");
+  });
+
+  it("keeps error text out of the log and the response", async () => {
+    const canary = "CANARY-quoted-from-the-transcript";
+    const failing: LlmProvider = {
+      id: "failing",
+      complete: async () => {
+        throw new Error(`could not parse model output: ${canary}`);
+      },
+    };
+    const { repo, base, head } = fixtureRepo({ "a.ts": "export const a = 1;\n" }, { "a.ts": "export const a = 2;\n" });
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const response = await createApp(failing).request("/v1/reviews", {
+      method: "POST",
+      body: JSON.stringify({ repoPath: repo, base, head, person: "p" }),
+    });
+
+    expect(response.status).toBe(500);
+    expect(await response.text()).not.toContain(canary);
+    expect(JSON.stringify(log.mock.calls)).not.toContain(canary);
+    log.mockRestore();
   });
 });
