@@ -51,9 +51,42 @@ export async function getFog(): Promise<FogMap> {
   return FogMap.parse(await json("/v1/fog"));
 }
 
-export async function getReview(id: string | null): Promise<Review> {
-  if (MOCK || !id) return Review.parse(mockReview);
-  return Review.parse(await json(`/v1/reviews/${id}`));
+export async function getReview(id: string): Promise<Review> {
+  if (MOCK) return Review.parse(mockReview);
+  return Review.parse(await json(`/v1/reviews/${encodeURIComponent(id)}`));
+}
+
+/** The most recently pushed review, or null if the daemon has none. Never sample data outside ?mock. */
+export async function getLatestReview(): Promise<Review | null> {
+  if (MOCK) return MOCK_EMPTY ? null : Review.parse(mockReview);
+  return Review.array().parse(await json("/v1/reviews"))[0] ?? null;
+}
+
+/**
+ * Loads one review for the exam: the given ID, or else the newest, which it then
+ * stays on so a later push can't swap the questions mid-exam. Answers that arrive
+ * out of order, or for another review once one is open, are ignored.
+ */
+export function reviewLoader(
+  reviewId: string | null,
+  onLoad: (review: Review | null) => void,
+  onError: (error: Error) => void,
+) {
+  let id = reviewId;
+  let latest = 0;
+  let stopped = false;
+  const load = () => {
+    const call = ++latest;
+    (id ? getReview(id) : getLatestReview()).then(
+      (loaded) => {
+        if (stopped || call !== latest || (id && loaded?.id !== id)) return;
+        if (loaded) id = loaded.id;
+        onLoad(loaded);
+      },
+      (error: Error) => { if (!stopped && call === latest) onError(error); },
+    );
+  };
+  return { load, stop: () => { stopped = true; } };
 }
 
 /** Mock mode has one snippet, so it returns that for any location. */

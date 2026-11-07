@@ -424,6 +424,19 @@ describe("vivad", () => {
     });
   });
 
+  it("lists reviews newest first, counting a repeat push of a decided change as new", async () => {
+    const app = createApp(new MockProvider());
+    const list = async () => Review.array().parse(await (await app.request("/v1/reviews")).json()).map((r) => r.id);
+    expect(await list()).toEqual([]);
+    const first = fixture();
+    const a = await start(app, first);
+    await answer(app, a, "behaviour");
+    const b = await start(app, fixture());
+    expect(await list()).toEqual([b.id, a.id]);
+    await start(app, first);
+    expect(await list()).toEqual([a.id, b.id]);
+  });
+
   it("keeps error text out of the log and the response", async () => {
     const canary = "CANARY-quoted-from-the-transcript";
     const failing: LlmProvider = {

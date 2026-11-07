@@ -51,6 +51,8 @@ The daemon deduplicates reviews by a SHA-256 identity of canonical repository pa
 
 `GET /v1/fog` maps the repo of the most recent push, unless `?repo` names one. The daemon only holds that in memory, so after a restart it returns an empty map with `repoPath: null` until the next push.
 
+`GET /v1/reviews` lists reviews newest first, and a repeat push of a decided change moves it to the front. The UI opens the first one when the URL has no review ID.
+
 ## Design rules
 
 - **Fail open.** If the daemon is down, the push goes through with a warning. Reliability beats coverage, as in HRT's Blobby talk.
