@@ -9,7 +9,7 @@
  */
 import { execFileSync } from "node:child_process";
 import { userInfo } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { basename, isAbsolute, join } from "node:path";
 import { createInterface } from "node:readline";
 import type { Answer, Review } from "@viva/contracts";
 import { allowsPush } from "@viva/engine";
@@ -71,6 +71,9 @@ export class VivaAcpAgent {
     private readonly notify: Notify,
     private readonly daemon: Daemon = new DaemonClient(),
     private readonly request = reviewRequest,
+    private readonly fileAt = (repo: string, rev: string, file: string): string | null => {
+      try { return gitIn(repo, "show", `${rev}:${file}`); } catch { return null; }
+    },
   ) {}
 
   async handle(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
@@ -89,6 +92,17 @@ export class VivaAcpAgent {
         if (!isAbsolute(cwd)) throw new RpcError(-32602, "cwd must be an absolute path");
         const sessionId = `viva-${this.nextId++}`;
         this.sessions.set(sessionId, { cwd, updatedAt: new Date().toISOString(), review: null, index: 0, answers: [] });
+        // Sent after the response, once the client knows the session.
+        setTimeout(() => {
+          this.update(sessionId, {
+            sessionUpdate: "available_commands_update",
+            availableCommands: [
+              { name: "review", description: "Review your unpushed commits and start the exam" },
+              { name: "skip", description: "Push without passing, leaving the code under fog" },
+            ],
+          });
+          this.update(sessionId, { sessionUpdate: "session_info_update", title: `Viva exam: ${basename(cwd)}` });
+        }, 0);
         return { sessionId };
       }
       case "session/list": {
@@ -113,36 +127,55 @@ export class VivaAcpAgent {
     }
   }
 
+  private update(sessionId: string, update: Record<string, unknown>) {
+    this.notify("session/update", { sessionId, update });
+  }
+
   private say(sessionId: string, text: string) {
-    this.notify("session/update", { sessionId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text } } });
+    this.update(sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text } });
+  }
+
+  /** The exam as a checklist that ticks off as each question is answered. */
+  private progress(sessionId: string, session: Session, review: Review, done = false) {
+    const entries = review.plan!.questions.map((q, i) => ({
+      content: `Q${i + 1}: ${q.ask}`,
+      priority: "high",
+      status: done || i < session.index ? "completed" : i === session.index ? "in_progress" : "pending",
+    }));
+    this.update(sessionId, { sessionUpdate: "plan", entries });
   }
 
   /** Points the editor at the code a question is about. */
   private show(sessionId: string, session: Session, review: Review) {
     const q = review.plan!.questions[session.index]!;
-    this.notify("session/update", {
-      sessionId,
-      update: {
-        sessionUpdate: "tool_call",
-        toolCallId: `${review.id}-${q.id}`,
-        title: `${q.location.file}:${q.location.lines[0]}-${q.location.lines[1]}`,
-        kind: "read",
-        status: "completed",
-        locations: [{ path: join(review.request.repoPath, q.location.file), line: q.location.lines[0] }],
-      },
+    const { repoPath, base, head } = review.request;
+    const path = join(repoPath, q.location.file);
+    const newText = this.fileAt(repoPath, head, q.location.file);
+    const content = newText === null ? [] : [{ type: "diff", path, oldText: this.fileAt(repoPath, base, q.location.file), newText }];
+    this.update(sessionId, {
+      sessionUpdate: "tool_call",
+      toolCallId: `${review.id}-${q.id}`,
+      title: `The change in question: ${q.location.file}:${q.location.lines[0]}-${q.location.lines[1]}`,
+      kind: "read",
+      status: "completed",
+      content,
+      locations: [{ path, line: q.location.lines[0] }],
     });
   }
 
   private ask(sessionId: string, session: Session, review: Review) {
     const questions = review.plan!.questions;
     const q = questions[session.index]!;
+    this.progress(sessionId, session, review);
     this.show(sessionId, session, review);
     this.say(sessionId, `**Question ${session.index + 1} of ${questions.length}.** ${q.ask}\n\n_Answer in your own words. Say "skip" to push with debt._`);
   }
 
-  private async turn(sessionId: string, session: Session, text: string) {
+  private async turn(sessionId: string, session: Session, input: string) {
+    let text = input;
     try {
-      if (!session.review || session.review.gate || /^\s*(review|again|restart)\s*$/i.test(text) && session.index === 0) {
+      text = text.replace(/^\s*\//, "");
+      if (!session.review || session.review.gate || /^\s*(review|again|restart)\s*$/i.test(text)) {
         await this.begin(sessionId, session);
         return;
       }
@@ -183,6 +216,7 @@ export class VivaAcpAgent {
 
   private finish(sessionId: string, session: Session, review: Review) {
     session.review = review;
+    if (review.plan?.questions.length) this.progress(sessionId, session, review, true);
     const gate = review.gate!;
     const lines = [`**${allowsPush(gate) ? "Push allowed" : "Push blocked"}**: ${gate.verdict} (${gate.reason}).`];
     for (const grade of review.grades) {
