@@ -72,3 +72,29 @@ describe("ACP agent", () => {
     expect(said()).toContain("connection refused");
   });
 });
+
+describe("Rex's guide", () => {
+  it("shows game over on a failed exam, then walks through each flag step by step", async () => {
+    const failed = {
+      ...pending, stage: "done", gate: { verdict: "reject", reason: "exam-failed", skippable: true },
+      claims: [{ id: "c-q1", origin: "silent", summary: "Moved the duplicate check after the charge", evidence: "A repeat event charges twice" }],
+      plan: { questions: [question("q1", "What happens on a duplicate?")] },
+      grades: [{ questionId: "q1", verdict: "reject", score: 0, missing: ["charged twice"] }],
+    } as unknown as Review;
+    const { agent, daemon, said } = setup();
+    daemon.start.mockResolvedValueOnce(failed);
+    const { sessionId } = (await agent.handle("session/new", { cwd: "/repo", mcpServers: [] })) as { sessionId: string };
+    await agent.handle("session/prompt", { sessionId, prompt: text("/review") });
+    expect(said()).toContain("G A M E   O V E R");
+    await agent.handle("session/prompt", { sessionId, prompt: text("/guide") });
+    expect(said()).toContain("Step 1 of 3");
+    expect(said()).toContain("Nobody asked for this");
+    await agent.handle("session/prompt", { sessionId, prompt: text("next") });
+    expect(said()).toContain("A repeat event charges twice");
+    await agent.handle("session/prompt", { sessionId, prompt: text("next") });
+    expect(said()).toContain("- charged twice");
+    await agent.handle("session/prompt", { sessionId, prompt: text("next") });
+    expect(said()).toContain("That's the whole run");
+    expect(daemon.start).toHaveBeenCalledTimes(1);
+  });
+});

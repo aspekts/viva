@@ -18,7 +18,14 @@ import { DaemonClient } from "./client.js";
 type Daemon = Pick<DaemonClient, "start" | "answer" | "skip">;
 type Notify = (method: string, params: unknown) => void;
 
+/** One stop on Rex's walk through a failed exam. */
+interface GuideStep {
+  questionIndex: number;
+  text: string;
+}
+
 interface Session {
+  guide?: { steps: GuideStep[]; index: number };
   cwd: string;
   updatedAt: string;
   review: Review | null;
@@ -31,6 +38,34 @@ export class RpcError extends Error {
 }
 
 const PROTOCOL_VERSION = 1;
+
+/** Rex, after the Chrome offline dino. Drawn in a code block so every editor keeps the shape. */
+export const REX = String.raw`
+               __
+              / _)
+     _.----._/ /
+    /         /
+ __/ (  | (  |
+/__.-'|_|--|_|`;
+
+const rex = (line: string) => "```" + REX + "\n```\n" + line + "\n\n";
+
+/** Rex's walk: for each question, where it fails, what changed, why it matters, and what was missed. */
+export function guideSteps(review: Review): GuideStep[] {
+  const questions = review.plan?.questions ?? [];
+  const steps: GuideStep[] = [];
+  questions.forEach((q, questionIndex) => {
+    const claim = review.claims.find((c) => c.id === q.claimId);
+    const grade = review.grades.find((g) => g.questionId === q.id);
+    const where = `${q.location.file}:${q.location.lines[0]}-${q.location.lines[1]}`;
+    const origin = claim?.origin === "silent" ? "Nobody asked for this. The agent decided it on its own." : claim?.origin === "inferred" ? "The agent inferred this from your request." : "You asked for this change.";
+    const missed = grade?.missing.length ? grade.missing.map((m) => `- ${m}`).join("\n") : "- Nothing. You covered this one.";
+    steps.push({ questionIndex, text: `**Where it fails:** \`${where}\`. I've opened the change above.\n\n**What changed:** ${claim?.summary ?? q.ask}\n\n${origin}` });
+    steps.push({ questionIndex, text: `**Why it matters:** ${claim?.evidence ?? "This changes how the code behaves."}\n\n**The question was:** ${q.ask}` });
+    steps.push({ questionIndex, text: `**What your answer missed:**\n${missed}\n\n**Your move:** read those lines until you can explain each point in your own words. If the code is wrong, fix it.` });
+  });
+  return steps;
+}
 
 function gitIn(cwd: string, ...args: string[]): string {
   return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
@@ -98,6 +133,7 @@ export class VivaAcpAgent {
             sessionUpdate: "available_commands_update",
             availableCommands: [
               { name: "review", description: "Review your unpushed commits and start the exam" },
+              { name: "guide", description: "After a failed exam, Rex walks you through where it fails" },
               { name: "skip", description: "Push without passing, leaving the code under fog" },
             ],
           });
@@ -175,6 +211,17 @@ export class VivaAcpAgent {
     let text = input;
     try {
       text = text.replace(/^\s*\//, "");
+      if (/^\s*guide\s*$/i.test(text) && session.review?.gate) {
+        session.guide = { steps: guideSteps(session.review), index: 0 };
+        this.guideStep(sessionId, session);
+        return;
+      }
+      if (session.guide && /^\s*(next|n|continue|ok)?\s*$/i.test(text)) {
+        session.guide.index += 1;
+        this.guideStep(sessionId, session);
+        return;
+      }
+      session.guide = undefined;
       if (!session.review || session.review.gate || /^\s*(review|again|restart)\s*$/i.test(text)) {
         await this.begin(sessionId, session);
         return;
@@ -198,6 +245,23 @@ export class VivaAcpAgent {
     }
   }
 
+  private guideStep(sessionId: string, session: Session) {
+    const guide = session.guide!;
+    const review = session.review!;
+    const step = guide.steps[guide.index];
+    if (!step) {
+      session.guide = undefined;
+      this.say(sessionId, rex("That's the whole run. Fix what needs fixing, commit, then type **/review** and Rex will try the jump again."));
+      return;
+    }
+    if (guide.index === 0 || guide.steps[guide.index - 1]!.questionIndex !== step.questionIndex) {
+      session.index = step.questionIndex;
+      this.show(sessionId, session, review);
+    }
+    const first = guide.index === 0 ? rex("Let's see where you tripped. One step at a time.") : "";
+    this.say(sessionId, `${first}**Step ${guide.index + 1} of ${guide.steps.length}.** ${step.text}\n\n_Type **next** to continue._`);
+  }
+
   private async begin(sessionId: string, session: Session) {
     const request = this.request(session.cwd);
     this.say(sessionId, `Reviewing ${request.base.slice(0, 7)}..${request.head.slice(0, 7)} in \`${request.repoPath}\`…\n\n`);
@@ -218,12 +282,15 @@ export class VivaAcpAgent {
     session.review = review;
     if (review.plan?.questions.length) this.progress(sessionId, session, review, true);
     const gate = review.gate!;
-    const lines = [`**${allowsPush(gate) ? "Push allowed" : "Push blocked"}**: ${gate.verdict} (${gate.reason}).`];
+    const header = allowsPush(gate)
+      ? rex("🦖 *Cleared it.* Rex jumps the cactus.")
+      : rex("🌵 **G A M E   O V E R**. Rex hit a cactus.");
+    const lines = [`${header}**${allowsPush(gate) ? "Push allowed" : "Push blocked"}**: ${gate.verdict} (${gate.reason}).`];
     for (const grade of review.grades) {
       const q = review.plan?.questions.find((x) => x.id === grade.questionId);
       lines.push(`- ${q?.ask ?? grade.questionId}: ${grade.verdict}, ${Math.round(grade.score * 100)}%${grade.missing.length ? `. Missed: ${grade.missing.join("; ")}` : ""}`);
     }
-    lines.push(allowsPush(gate) ? "\nRun `git push` again and it goes through." : "\nSay \"review\" to try again after a fix, or \"skip\" to push with debt.");
+    lines.push(allowsPush(gate) ? "\nRun `git push` again and it goes through." : "\nType **/guide** and Rex walks you through where it fails, step by step. Or **/review** after a fix, or **/skip** to push with debt.");
     this.say(sessionId, lines.join("\n"));
   }
 }
