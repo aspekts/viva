@@ -151,7 +151,9 @@ write(BEFORE);
 commit("Handle paid-order webhooks from the card gateway");
 git("push", "-q", "-u", "origin", "main");
 
-run("pnpm", ["--silent", "--dir", VIVA_ROOT, "viva", "hook", "install"], DIR, { VIVA_REPO: DIR });
+// Corepack picks a pnpm version from cwd before pnpm handles its own arguments.
+// Run in Viva's workspace while installing the hook into the demo repository.
+run("pnpm", ["--silent", "viva", "hook", "install"], VIVA_ROOT, { VIVA_REPO: DIR });
 
 write(AFTER);
 commit("Add retries to the payment webhook\n\nThe card gateway sometimes times out. Retry the charge up to three times.");

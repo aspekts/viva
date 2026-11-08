@@ -31,12 +31,17 @@ VIVA_REPO=/path/to/some/repo pnpm viva hook install
 
 Commit a change in that repo and `git push`:
 
-- **Terminal:** risky changes open an Ink exam in place. Type an answer to each question, press Enter to submit, and read the verdict. Esc offers an explicit **skip with debt**; hard gates cannot be skipped. Ctrl-C leaves the exam unfinished and blocks the push.
-- **IDE / coding agent / CI:** the hook prints a link to the AnimePix buddy site, where your chosen character pops up with the risk, the flagged decisions and the questions, and also prints the exam room link and exits non-zero immediately after review creation, without polling for a person. On a local desktop it also opens the buddy in the browser, and does so for a blocked push too, to show the verdict; known agent and CI environments never launch one. Set `VIVA_NONINTERACTIVE=1` for tools without a recognized agent marker. Complete the browser exam or run `pnpm viva exam <reviewId>` in a terminal, then retry `git push`.
+- **Local terminal / desktop IDE:** risky changes open the AnimePix buddy site in your browser, where your chosen character shows the risk, flagged decisions and questions. The hook prints the review links and blocks this push immediately. Complete the browser exam, then retry `git push`. Blocked verdicts also open the site. Low-risk approvals go through without opening it.
+- **Terminal answers:** run `pnpm viva exam <reviewId>` to answer in the terminal instead. SSH and headless terminals also use this flow. Esc offers an explicit **skip with debt**; hard gates cannot be skipped. Ctrl-C leaves the exam unfinished and blocks the push.
+- **Coding agent / CI:** the hook only prints the review links and exits non-zero immediately, without opening a browser or polling for a person. Set `VIVA_NONINTERACTIVE=1` for tools without a recognized agent marker. Complete the exam, then retry `git push`.
 - **Retry:** the same repository, commit range and developer reuse the completed decision, including after a daemon restart. A failed exam still blocks. Skipping is an explicit debt decision, not a pass or a mastery attestation.
 - **Daemon down / infrastructure crash:** the hook warns and allows the push, as before.
 
 Set `VIVA_BUDDY=off` to open the exam room instead, or `VIVA_BUDDY=<url>` to point elsewhere.
+
+To install the hook in this checkout, run `pnpm viva hook install`. Each developer installs it once in each repo. The site and daemon must be running via `pnpm dev`.
+
+To test the complete push flow without sending changes to GitHub, run `pnpm demo` from this checkout, then `cd ../viva-demo-shop` and `git push` in another terminal. The demo creates a local bare remote and an unpushed risky payment change with the hook installed. **Running `pnpm demo` again deletes and rebuilds those demo directories.** With `VIVA_LLM=mock` in `.env`, this needs no API key; the mock proves the flow, not real risk detection. Its passing answer must include the word `behaviour`, for example: "The behaviour changes because a duplicate event can charge the card again." After passing on the site, retry `git push`.
 
 Run the commands below from this Viva checkout. Set `VIVA_REPO` to the target repo when handing feedback to an agent so it runs there.
 

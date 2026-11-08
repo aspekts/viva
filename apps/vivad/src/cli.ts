@@ -47,10 +47,11 @@ function commitIntent(base: string): string | undefined {
   }
 }
 
-export async function presentReview(review: Review, client: DaemonClient): Promise<number> {
+export async function presentReview(review: Review, client: DaemonClient, preferTerminal = false): Promise<number> {
   const context = pushContext(process.env, !!(process.stderr.isTTY || process.stdout.isTTY));
   if (review.stage === "awaiting-exam") {
-    const input = context.terminal ? controllingTerminal() : null;
+    // Desktop pushes go to the site; explicit `viva exam` and remote terminals keep Ink.
+    const input = context.terminal && (preferTerminal || !context.openBrowser) ? controllingTerminal() : null;
     if (input) {
       const output = process.stderr.isTTY ? process.stderr : process.stdout;
       const completed = await runExam(review, client, input, output);
@@ -74,10 +75,11 @@ export async function presentReview(review: Review, client: DaemonClient): Promi
   console.log(`viva: ${review.gate.verdict} (${review.gate.reason})`);
   if (!allowsPush(review.gate)) {
     console.error(`viva: push blocked. Run pnpm viva feedback ${review.id} for missed concepts.${review.gate.skippable ? ` Run pnpm viva exam ${review.id} to review the verdict or skip with debt.` : " Hard gate: resolve the flagged change; this cannot be skipped."}`);
-    // A blocked push from an IDE or GUI has nowhere to show the verdict, so the buddy pops up with it.
+    const link = reviewLink(BUDDY ?? WEB, review.id);
+    console.error(`viva: review this push at ${link}`);
     // It must never throw: gate() fails open on unexpected errors, which would let this blocked push through.
     try {
-      if (BUDDY && context && !context.terminal && context.openBrowser) await openInBrowser(reviewLink(BUDDY, review.id));
+      if (!preferTerminal && context.openBrowser) await openInBrowser(link);
     } catch { /* The printed instructions remain. */ }
   }
   return allowsPush(review.gate) ? 0 : 1;
@@ -119,20 +121,31 @@ async function exam(id: string): Promise<number> {
   const review = await client.review(id);
   const context = pushContext(process.env, !!(process.stderr.isTTY || process.stdout.isTTY));
   const input = context.terminal ? controllingTerminal() : null;
-  if (!input) return presentReview(review, client);
+  if (!input) return presentReview(review, client, true);
   const completed = await runExam(review, client, input, process.stderr.isTTY ? process.stderr : process.stdout);
-  return completed ? presentReview(completed, client) : 1;
+  return completed ? presentReview(completed, client, true) : 1;
 }
 
 /** Appends to the hook, as core.hooksPath would bypass Entire's hooks. */
 function installHook(): number {
   const path = resolve(REPO, git("rev-parse", "--git-path", "hooks"), "pre-push");
   const existing = existsSync(path) ? readFileSync(path, "utf8") : "#!/bin/sh\n";
+  const legacy = `VIVA_REPO="$(pwd)" pnpm --silent --dir "${VIVA_ROOT}" viva gate || exit $?`;
+  const quotedRoot = `'${VIVA_ROOT.replaceAll("'", "'\"'\"'")}'`;
+  // Corepack selects pnpm from cwd before pnpm handles --dir. Preserve the pushed
+  // repo, then enter Viva's workspace so another project's pnpm version cannot win.
+  const command = `(export VIVA_REPO="$(pwd)"; cd ${quotedRoot} || exit 0; pnpm --silent viva gate) || exit $?`;
   if (existing.includes(MARKER)) {
+    if (existing.includes(legacy)) {
+      writeFileSync(path, existing.replace(legacy, command));
+      chmodSync(path, 0o755);
+      console.log(`viva: updated ${path}`);
+      return 0;
+    }
     console.log("viva: hook already installed");
     return 0;
   }
-  writeFileSync(path, `${existing.trimEnd()}\n\n${MARKER}\nVIVA_REPO="$(pwd)" pnpm --silent --dir "${VIVA_ROOT}" viva gate || exit $?\n`);
+  writeFileSync(path, `${existing.trimEnd()}\n\n${MARKER}\n${command}\n`);
   chmodSync(path, 0o755);
   console.log(`viva: installed ${path}`);
   return 0;
