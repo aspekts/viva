@@ -20,6 +20,7 @@ type Notify = (method: string, params: unknown) => void;
 
 interface Session {
   cwd: string;
+  updatedAt: string;
   review: Review | null;
   index: number;
   answers: Answer[];
@@ -77,7 +78,7 @@ export class VivaAcpAgent {
       case "initialize":
         return {
           protocolVersion: PROTOCOL_VERSION,
-          agentCapabilities: { loadSession: false, promptCapabilities: { image: false, audio: false, embeddedContext: false } },
+          agentCapabilities: { loadSession: false, promptCapabilities: { image: false, audio: false, embeddedContext: false }, sessionCapabilities: { list: {} } },
           agentInfo: { name: "viva", title: "Viva", version: "0.1.0" },
           authMethods: [],
         };
@@ -87,12 +88,21 @@ export class VivaAcpAgent {
         const cwd = String(params.cwd ?? "");
         if (!isAbsolute(cwd)) throw new RpcError(-32602, "cwd must be an absolute path");
         const sessionId = `viva-${this.nextId++}`;
-        this.sessions.set(sessionId, { cwd, review: null, index: 0, answers: [] });
+        this.sessions.set(sessionId, { cwd, updatedAt: new Date().toISOString(), review: null, index: 0, answers: [] });
         return { sessionId };
+      }
+      case "session/list": {
+        // JetBrains Air only shows agents that can list their sessions.
+        const cwd = typeof params.cwd === "string" ? params.cwd : null;
+        const sessions = [...this.sessions.entries()]
+          .filter(([, session]) => !cwd || session.cwd === cwd)
+          .map(([sessionId, session]) => ({ sessionId, cwd: session.cwd, title: session.review ? `Viva exam ${session.review.id.slice(0, 8)}` : "Viva exam", updatedAt: session.updatedAt }));
+        return { sessions };
       }
       case "session/prompt": {
         const session = this.sessions.get(String(params.sessionId));
         if (!session) throw new RpcError(-32602, "unknown session");
+        session.updatedAt = new Date().toISOString();
         await this.turn(String(params.sessionId), session, promptText(params.prompt));
         return { stopReason: "end_turn" };
       }

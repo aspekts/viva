@@ -28,6 +28,9 @@ describe("ACP agent", () => {
     const { agent } = setup();
     expect(await agent.handle("initialize", { protocolVersion: 1 })).toMatchObject({ protocolVersion: 1 });
     await expect(agent.handle("session/new", { cwd: "repo", mcpServers: [] })).rejects.toBeInstanceOf(RpcError);
+    const { sessionId } = (await agent.handle("session/new", { cwd: "/repo", mcpServers: [] })) as { sessionId: string };
+    expect(await agent.handle("session/list", { cwd: "/repo" })).toMatchObject({ sessions: [{ sessionId, cwd: "/repo" }] });
+    expect(await agent.handle("session/list", { cwd: "/elsewhere" })).toEqual({ sessions: [] });
   });
 
   it("asks each question in turn, points at the code, then submits the answers", async () => {
