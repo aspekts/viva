@@ -1,4 +1,4 @@
-// The AnimePix pop-up, ported to drive a real Viva review. It only renders:
+// The Viva buddy pop-up (Rex), first built in Sophina's AnimePix mockup, driving a real Viva review. It only renders:
 // main.ts decides what to say and what each button does.
 import { draw, spriteFor, DEFAULT_CHARACTER, type Mood } from "./sprites";
 
@@ -60,10 +60,13 @@ export class Buddy {
     this.render();
   }
 
-  setMood(mood: Mood): void { this.root.dataset.mood = mood; }
+  setMood(mood: Mood): void {
+    this.root.dataset.mood = mood;
+    this.render();
+  }
 
   private render(): void {
-    void draw(this.canvas, this.character, 5);
+    void draw(this.canvas, this.character, 5, (this.root?.dataset.mood as Mood | undefined) ?? "neutral");
     this.nameEl.textContent = this.name;
   }
 

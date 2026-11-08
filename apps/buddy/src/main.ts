@@ -7,7 +7,7 @@ import "./styles.css";
 
 const $ = <T extends HTMLElement>(selector: string) => document.querySelector<T>(selector)!;
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
-const STORAGE_KEY = "animepix.buddy";
+const STORAGE_KEY = "viva.buddy";
 
 const buddy = new Buddy($("#stage"));
 const reviewId = new URLSearchParams(location.search).get("review");

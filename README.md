@@ -17,7 +17,7 @@ pnpm dev
 ```
 
 - **Web UI:** http://localhost:5173
-- **AnimePix buddy:** http://localhost:5174, the separate site a high-risk push opens. Try it with no daemon at http://localhost:5174/?mock (add `&failed` or `&hard`)
+- **Viva buddy (Rex):** http://localhost:5174, the separate site a high-risk push opens. Try it with no daemon at http://localhost:5174/?mock (add `&failed` or `&hard`)
 - **Daemon:** http://127.0.0.1:4317/v1/health
 - **Frontend only:** run `pnpm dev:web` and open http://localhost:5173/?mock to use sample data with no daemon.
 
@@ -31,7 +31,7 @@ VIVA_REPO=/path/to/some/repo pnpm viva hook install
 
 Commit a change in that repo and `git push`:
 
-- **Local terminal / desktop IDE:** risky changes open the AnimePix buddy site in your browser, where your chosen character shows the risk, flagged decisions and questions. The hook prints the review links and blocks this push immediately. Complete the browser exam, then retry `git push`. Blocked verdicts also open the site. Low-risk approvals go through without opening it.
+- **Local terminal / desktop IDE:** risky changes open the Viva buddy (Rex) site in your browser, where Rex shows the risk, flagged decisions and questions. The hook prints the review links and blocks this push immediately. Complete the browser exam, then retry `git push`. Blocked verdicts also open the site. Low-risk approvals go through without opening it.
 - **Terminal answers:** run `pnpm viva exam <reviewId>` to answer in the terminal instead. SSH and headless terminals also use this flow. Esc offers an explicit **skip with debt**; hard gates cannot be skipped. Ctrl-C leaves the exam unfinished and blocks the push.
 - **Coding agent / CI:** the hook only prints the review links and exits non-zero immediately, without opening a browser or polling for a person. Set `VIVA_NONINTERACTIVE=1` for tools without a recognized agent marker. Complete the exam, then retry `git push`.
 - **Retry:** the same repository, commit range and developer reuse the completed decision, including after a daemon restart. A failed exam still blocks. Skipping is an explicit debt decision, not a pass or a mastery attestation.
@@ -143,6 +143,6 @@ existing frontend fixtures. Mock keyword grading is not evidence of understandin
 | Backend, engine, Entire | Marcus | `packages/engine`, `apps/vivad` |
 | The Fog | Kay | `apps/web/src/fog` |
 | Exam room and voice | Sophina | `apps/web/src/exam` |
-| AnimePix buddy | Sophina | `apps/buddy` |
+| Viva buddy (Rex) | Sophina | `apps/buddy` |
 | Demo, evidence, submission | Pedro | `evals`, `docs` |
 | Shared data shapes | Everyone, via PR | `packages/contracts` |
