@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Viva · HackTheBurgh XIII</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,700;1,6..72,500;1,6..72,700&family=Pixelify+Sans:wght@600;700&display=swap" rel="stylesheet" />
+<style>
+/* Viva's red-pen identity: paper and ink, one red pen colour, a serif for what is said, mono for code. */
+:root {
+  --paper: #fbfbf9; --ink: #1d2433; --ink-soft: #565d70; --rule: #d6d9e0;
+  --clear: #e3eaf8; --fog: #8f97a8; --pen: #c8281e; --pen-soft: rgba(200, 40, 30, .08);
+  --serif: "Newsreader", Georgia, "Times New Roman", serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  --rex: "Pixelify Sans", ui-monospace, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: #e9e9e4; overflow: hidden; }
+body { font-family: var(--serif); color: var(--ink); }
+
+/* A 1600x900 stage, scaled to fit any screen. */
+.stage { position: absolute; left: 50%; top: 50%; width: 1600px; height: 900px; transform-origin: center; }
+.slide {
+  position: absolute; inset: 0; background: var(--paper); padding: 84px 110px 96px;
+  display: flex; flex-direction: column; opacity: 0; pointer-events: none; transition: opacity .35s ease;
+}
+.slide.active { opacity: 1; pointer-events: auto; }
+.slide::after { content: ""; position: absolute; left: 110px; right: 110px; bottom: 64px; border-top: 2px solid var(--ink); }
+.foot { position: absolute; left: 110px; right: 110px; bottom: 26px; display: flex; justify-content: space-between; font: 500 15px var(--mono); color: var(--ink-soft); }
+.foot b { color: var(--ink); font-family: var(--serif); font-style: italic; font-size: 18px; }
+
+.kicker { font: 600 18px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--pen); margin: 0 0 18px; }
+h1 { font-size: 112px; line-height: .98; margin: 0; letter-spacing: -.02em; font-weight: 700; }
+h2 { font-size: 72px; line-height: 1.04; margin: 0 0 34px; letter-spacing: -.015em; font-weight: 700; max-width: 1300px; }
+h2 em, h1 em { color: var(--pen); font-style: italic; }
+p.lede { font-size: 34px; line-height: 1.35; max-width: 1180px; margin: 0; color: var(--ink); }
+.soft { color: var(--ink-soft); }
+.mono { font-family: var(--mono); }
+.pen { color: var(--pen); }
+mark { background: var(--pen-soft); color: var(--pen); padding: 0 .15em; }
+
+.grid { display: grid; gap: 28px; margin-top: auto; margin-bottom: 26px; }
+.g2 { grid-template-columns: 1fr 1fr; } .g3 { grid-template-columns: repeat(3, 1fr); } .g4 { grid-template-columns: repeat(4, 1fr); }
+.card { border: 2px solid var(--ink); background: #fff; padding: 26px 28px; border-radius: 2px; }
+.card h3 { font-size: 34px; margin: 0 0 10px; }
+.card p { font-size: 22px; line-height: 1.4; margin: 0; color: var(--ink-soft); }
+.card .num { font: 600 15px var(--mono); color: var(--pen); letter-spacing: .1em; display: block; margin-bottom: 10px; }
+.card.hot { border-color: var(--pen); box-shadow: 6px 6px 0 var(--pen); }
+
+/* Rex */
+canvas.rex { image-rendering: pixelated; }
+.rex-name { font: 700 26px var(--rex); }
+
+/* Title */
+.title-wrap { display: grid; grid-template-columns: 1fr 360px; align-items: center; height: 100%; }
+.title-wrap .tag { font: 500 34px var(--serif); font-style: italic; margin-top: 26px; color: var(--ink-soft); }
+.title-wrap .team { margin-top: 54px; font: 500 19px var(--mono); color: var(--ink-soft); }
+
+/* Fog strip */
+.fogstrip { display: grid; grid-template-columns: repeat(12, 1fr); gap: 6px; margin: 30px 0 0; }
+.fogstrip span { height: 92px; background: var(--clear); position: relative; border: 2px solid var(--paper); }
+.fogstrip span::after { content: ""; position: absolute; inset: 0; background: var(--fog); opacity: var(--f); }
+.debt { font: 600 24px var(--mono); margin-top: 18px; }
+
+/* Code */
+pre.code { font: 500 21px/1.55 var(--mono); background: #fff; border: 2px solid var(--ink); padding: 22px 28px; margin: 0; white-space: pre; }
+.code .del { color: var(--ink-soft); text-decoration: line-through; text-decoration-color: var(--pen); }
+.code .add { background: var(--pen-soft); color: var(--pen); }
+.code .note { color: var(--ink-soft); font-style: italic; }
+
+/* Pipeline */
+.pipe { display: flex; align-items: stretch; gap: 0; margin-top: auto; margin-bottom: 30px; }
+.step { flex: 1; border: 2px solid var(--ink); border-right: 0; padding: 20px 16px; background: #fff; }
+.step:last-child { border-right: 2px solid var(--ink); }
+.step b { display: block; font-size: 25px; margin-bottom: 8px; line-height: 1.15; }
+.step span { font: 500 15px/1.4 var(--mono); color: var(--ink-soft); }
+.step.det { background: var(--paper); }
+.step.llm { background: #fff; }
+.step.llm b::after { content: " ◆"; color: var(--pen); font-size: 16px; }
+.legend { font: 500 17px var(--mono); color: var(--ink-soft); margin-bottom: 8px; }
+
+/* Formula */
+.formula { font: 500 40px/1.5 var(--mono); border: 2px solid var(--ink); background: #fff; padding: 30px 36px; margin: 10px 0 30px; }
+.formula .t { border-bottom: 3px solid var(--pen); }
+
+/* Stats */
+.stat { border-top: 2px solid var(--ink); padding-top: 16px; }
+.stat b { display: block; font-size: 84px; line-height: 1; letter-spacing: -.02em; }
+.stat > span { font-size: 22px; color: var(--ink-soft); line-height: 1.35; display: block; margin-top: 10px; }
+.stat.pen b { color: var(--pen); }
+
+/* Demo cue */
+.cue { display: grid; grid-template-columns: 1fr 320px; gap: 50px; height: 100%; align-items: center; }
+.cue ol { list-style: none; margin: 34px 0 0; padding: 0; counter-reset: s; }
+.cue li { counter-increment: s; font-size: 34px; line-height: 1.3; padding: 13px 0; border-bottom: 1px solid var(--rule); display: grid; grid-template-columns: 70px 1fr; }
+.cue li::before { content: counter(s, decimal-leading-zero); font: 600 20px var(--mono); color: var(--pen); padding-top: 10px; }
+.live { display: inline-block; font: 700 20px var(--mono); letter-spacing: .2em; color: #fff; background: var(--pen); padding: 6px 14px; }
+
+/* Lists */
+ul.ticks { list-style: none; padding: 0; margin: 0; }
+ul.ticks li { font-size: 28px; line-height: 1.35; padding: 12px 0 12px 46px; border-bottom: 1px solid var(--rule); position: relative; }
+ul.ticks li::before { content: "✓"; position: absolute; left: 4px; top: 12px; color: var(--pen); font-weight: 700; }
+ul.ticks li .mono { font-size: 21px; }
+ul.next li::before { content: "→"; }
+
+.sponsor { display: grid; grid-template-columns: 260px 1fr; gap: 26px; padding: 17px 0; border-bottom: 1px solid var(--rule); align-items: baseline; }
+.sponsor b { font-size: 34px; }
+.sponsor span { font-size: 25px; line-height: 1.4; color: var(--ink-soft); }
+
+/* Presenter chrome */
+.progress { position: fixed; left: 0; top: 0; height: 5px; background: var(--pen); transition: width .3s; z-index: 5; }
+.notes {
+  position: fixed; left: 0; right: 0; bottom: 0; max-height: 38vh; overflow: auto; z-index: 6; display: none;
+  background: var(--ink); color: var(--paper); font: 18px/1.5 var(--serif); padding: 16px 26px;
+}
+.notes.on { display: block; }
+.notes .meta { font: 500 14px var(--mono); color: #aab0c0; margin-bottom: 6px; display: flex; gap: 24px; }
+.notes .meta .over { color: #ff8a80; }
+.help { position: fixed; right: 14px; top: 12px; font: 12px var(--mono); color: #8a8f9c; z-index: 4; }
+@media print { .progress, .notes, .help { display: none !important; } }
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+<div class="help">← → move · N notes · T reset timer · F fullscreen</div>
+
+<div class="stage" id="stage">
+
+<!-- 1 · Title -->
+<section class="slide" data-time="10" data-notes="PEDRO. Hi, we're Viva. One question for the room: how much of the code you shipped this weekend could you explain line by line? Hold that thought.">
+  <div class="title-wrap">
+    <div>
+      <p class="kicker">HackTheBurgh XIII</p>
+      <h1>Viva</h1>
+      <p class="tag">You didn't write it.<br/><span class="pen">Can you defend it?</span></p>
+      <p class="team">Marcus · Pedro · Kay · Sophina</p>
+    </div>
+    <div style="text-align:center"><canvas class="rex" data-rex="neutral" data-size="300"></canvas><div class="rex-name">Rex</div></div>
+  </div>
+</section>
+
+<!-- 2 · The shift -->
+<section class="slide" data-time="20" data-notes="PEDRO. Agents write more of our code every month. Review was built for a world where the author understood the change. Now the author is a model, and the human who presses push may never have read it. Tests check behaviour. Nothing checks understanding.">
+  <p class="kicker">The shift</p>
+  <h2>Agents write the code now.<br/>Nobody checks that a <em>human understands it</em>.</h2>
+  <div class="grid g3">
+    <div class="card"><span class="num">BEFORE</span><h3>Author = owner</h3><p>Whoever wrote the change could explain it, and review assumed they could.</p></div>
+    <div class="card"><span class="num">NOW</span><h3>Author = agent</h3><p>The person who pushes may have prompted it, skimmed it, and never read the risky line.</p></div>
+    <div class="card hot"><span class="num">THE GAP</span><h3>Comprehension debt</h3><p>Code that ships and works, but that nobody on the team can explain when it breaks at 3am.</p></div>
+  </div>
+</section>
+
+<!-- 3 · The silent decision -->
+<section class="slide" data-time="25" data-notes="MARCUS. Here's the kind of thing we mean. We asked an agent: add retries to the payment webhook. It did. It also quietly moved the duplicate check below the charge. Nobody asked for that. Tests pass. If the payment provider sends the same event twice, the customer pays twice. That's a silent decision.">
+  <p class="kicker">A silent decision</p>
+  <h2>"Add retries to the payment webhook."</h2>
+  <pre class="code"><span class="note">// src/webhook.js, after the agent's change. Tests: 3 passed</span>
+export async function handleWebhook(event, { store, gateway }) {
+<span class="del">  if (await store.hasProcessed(event.id)) return { status: "duplicate" };</span>
+<span class="add">  const receipt = await withRetry(() =&gt; chargeCard(event.order, gateway));</span>
+<span class="add">  if (await store.hasProcessed(event.id)) return { status: "duplicate" }; // moved</span>
+  await store.markProcessed(event.id);
+  return { status: "charged", receipt };
+}</pre>
+  <p class="lede" style="margin-top:30px">The retries were <b>requested</b>. Moving the check was <mark>silent</mark>. A repeated event now charges the card <b>twice</b>.</p>
+</section>
+
+<!-- 4 · What Viva is -->
+<section class="slide" data-time="20" data-notes="PEDRO. Viva does three things. It shows you where the fog is: code nobody has shown they understand. At git push it holds a viva, an oral exam, on the riskiest decision, especially the ones nobody asked for. And it remembers who understands what, in git itself.">
+  <p class="kicker">Viva</p>
+  <h2>See the fog. <em>Defend</em> the risky change. Remember who understands it.</h2>
+  <div class="grid g3">
+    <div class="card"><span class="num">01 · THE FOG</span><h3>See it</h3><p>A map of your repo. Grey is code no human on the team has shown they understand.</p></div>
+    <div class="card hot"><span class="num">02 · THE VIVA</span><h3>Defend it</h3><p>At <span class="mono">git push</span>, one or two questions on the riskiest decision, typed or spoken.</p></div>
+    <div class="card"><span class="num">03 · THE LEDGER</span><h3>Remember it</h3><p>Who understands what, stored in git notes. It fades over time and when the code changes.</p></div>
+  </div>
+</section>
+
+<!-- 5 · Live demo cue -->
+<section class="slide" data-time="150" data-notes="MARCUS DRIVES (about 2:30). 1) Safari Fog tab: everything grey, debt 3,086. 2) Terminal: git push. Blocked in about 6s, Rex pops up. 3) Pedro reads Rex: two decisions, retries requested, reorder NOT ASKED FOR, risk 91. Click Defend it, then Open in the full exam room. 4) Answer by voice: 'It gets charged again. The retry change moved the duplicate check after the charge, so a repeat event charges first and only then returns duplicate. The check has to run before the charge.' Submit. Grading takes about 10s: Pedro says 'one question, not a quiz on every line'. 5) Fog tab: webhook.js clears with Marcus's name. git push again goes through. 6) Optional: WebStorm AI Chat, /review, then /guide. IF ANYTHING BREAKS: pnpm demo, push again, or switch to the backup recording.">
+  <div class="cue">
+    <div>
+      <span class="live">LIVE DEMO</span>
+      <ol>
+        <li>The Fog: a small shop, all grey</li>
+        <li><span class="mono" style="font-size:30px">git push</span> the agent's "retries" change</li>
+        <li>Rex catches the decision nobody asked for</li>
+        <li>The viva: answer it out loud</li>
+        <li>The fog clears, and the push goes through</li>
+        <li>Same exam inside WebStorm</li>
+      </ol>
+    </div>
+    <div style="text-align:center"><canvas class="rex" data-rex="shock" data-size="280" data-colour="#c8281e"></canvas><div class="rex-name pen">HOLD UP!</div></div>
+  </div>
+</section>
+
+<!-- 6 · How it works -->
+<section class="slide" data-time="20" data-notes="MARCUS. Under the hood: deterministic checks first. Docs-only changes, oversized diffs, changes to Viva's own config and prompt injection are all caught before any model is called. Then Gemini runs focused checks in parallel. We rank what it finds deterministically, ask at most three questions, and a separate grader marks the transcript. Worst verdict wins. Every model call is schema-enforced and budgeted.">
+  <p class="kicker">How it works</p>
+  <h2>Deterministic first. The model only where it earns its place.</h2>
+  <div class="legend"><span class="pen">◆</span> = Gemini call, schema-enforced and token-budgeted · everything else is deterministic</div>
+  <div class="pipe">
+    <div class="step det"><b>Read the push</b><span>git diff, numstat, blast radius via git grep</span></div>
+    <div class="step det"><b>Prechecks</b><span>docs-only, too large, protected config</span></div>
+    <div class="step det"><b>Injection scan</b><span>text that tries to instruct Viva is a hard gate</span></div>
+    <div class="step llm"><b>Checks</b><span>silent decision, behaviour change, failure path, run in parallel</span></div>
+    <div class="step det"><b>Rank &amp; plan</b><span>risk score, dedupe, max 3 questions</span></div>
+    <div class="step llm"><b>Examine &amp; grade</b><span>separate grader, worst verdict wins</span></div>
+    <div class="step det"><b>Ledger</b><span>scores and hashes in git notes</span></div>
+  </div>
+</section>
+
+<!-- 7 · Risk score -->
+<section class="slide" data-time="15" data-notes="MARCUS. Why one question and not twenty? Every claim gets a risk score. Wider blast radius, silent rather than requested, untested, and nobody has mastered it yet: those multiply. If you've already proven you understand a file, Viva doesn't ask again, until the code changes.">
+  <p class="kicker">Ask only where it matters</p>
+  <h2>A risk score decides what's worth a question.</h2>
+  <div class="formula">risk = (1 + ln(1 + <span class="t">blast radius</span>)) × <span class="t">origin</span><br/>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;× (0.5 + 0.5 × <span class="t">untested</span>) × (1 − <span class="t">team mastery</span>)</div>
+  <div class="grid g4" style="margin-top:0">
+    <div class="stat"><b>×0.5</b><span>requested by the prompt</span></div>
+    <div class="stat"><b>×1</b><span>inferred from the prompt</span></div>
+    <div class="stat pen"><b>×2</b><span>silent: nobody asked for it</span></div>
+    <div class="stat"><b>½ / 14d</b><span>mastery halves every two weeks, and drops when the code changes</span></div>
+  </div>
+</section>
+
+<!-- 8 · Trust -->
+<section class="slide" data-time="15" data-notes="PEDRO. A tool that quizzes developers has to be fair and has to be trusted. The examiner never sees the rubric. Grading only sees words, never tone or accent, and ElevenLabs doesn't keep audio. Only scores and hashes go into the ledger. You can always skip, but that's visible debt, and if Viva breaks, it never blocks your push.">
+  <p class="kicker">Fair by design</p>
+  <h2>Hard on the code. <em>Fair</em> to the person.</h2>
+  <div class="grid g2" style="align-items:start">
+    <ul class="ticks">
+      <li>Grading sees the transcript only, never tone, pace or accent</li>
+      <li>The voice examiner never sees the rubric</li>
+      <li>Typing always works, even mid-exam</li>
+    </ul>
+    <ul class="ticks">
+      <li>Ledger holds scores and code hashes. No diffs, transcripts or audio</li>
+      <li>Skip anytime, as visible "debt". Hard gates for injection and Viva's own config</li>
+      <li>If Viva is down or slow, the push goes through. It never holds you hostage</li>
+    </ul>
+  </div>
+</section>
+
+<!-- 9 · Everywhere -->
+<section class="slide" data-time="15" data-notes="MARCUS. It meets developers where they are. A git hook on Mac, Windows and Linux. Rex in the browser. Voice through ElevenLabs. The terminal. And because it's an ACP agent, it runs inside JetBrains, Zed and VS Code. And Kay will show it running on a Windows laptop.">
+  <p class="kicker">Wherever you push from</p>
+  <h2>One engine. Every surface developers already use.</h2>
+  <div class="grid g3">
+    <div class="card"><span class="num">GIT HOOK</span><h3>pre-push</h3><p>macOS, Windows and Linux. CI on all three. Fails open.</p></div>
+    <div class="card"><span class="num">BROWSER</span><h3>Rex + exam room</h3><p>Rex pops up with the risk. The exam room shows the code.</p></div>
+    <div class="card hot"><span class="num">VOICE</span><h3>Say it out loud</h3><p>An ElevenLabs examiner asks, listens and follows up once.</p></div>
+    <div class="card"><span class="num">TERMINAL</span><h3>Ink exam</h3><p>Answer in place over SSH or headless terminals.</p></div>
+    <div class="card"><span class="num">ACP AGENT</span><h3>JetBrains · Zed · VS Code</h3><p>Checklist, live diffs, and Rex's <span class="mono">/guide</span> in the agent chat.</p></div>
+    <div class="card"><span class="num">AGENTS &amp; CI</span><h3>Never prompts a bot</h3><p>Prints the link and blocks, so a person answers.</p></div>
+  </div>
+</section>
+
+<!-- 10 · Evidence -->
+<section class="slide" data-time="20" data-notes="MARCUS. We measured it, and we'll be honest. On seeded bugs it found 15 of 16. On real agent changes from our own commit history, the bugs we actually shipped this weekend, it found 1 of 6 and flagged 3 clean changes. That gap is exactly why we built an eval harness. It's what we'd fix next. A push is held in about 6 seconds, with 4 model calls and about 4,500 tokens.">
+  <p class="kicker">Measured, honestly</p>
+  <h2>Strong on seeded bugs. Real agent changes are <em>the next frontier</em>.</h2>
+  <div class="grid g4">
+    <div class="stat"><b>15/16</b><span>seeded bugs found by the checks</span></div>
+    <div class="stat pen"><b>1/6</b><span>real bugs from our own agent commits. 3 of 4 clean changes flagged</span></div>
+    <div class="stat"><b>~6s</b><span>from <span class="mono">git push</span> to the question. 4 model calls, ~4.5k tokens</span></div>
+    <div class="stat"><b>400+</b><span>tests, CI on macOS, Windows and Linux, plus a live eval harness</span></div>
+  </div>
+</section>
+
+<!-- 11 · Built with -->
+<section class="slide" data-time="15" data-notes="PEDRO. Quickly, what each sponsor technology does in Viva. Gemini runs every check, question and grade. ElevenLabs is the voice of the viva. Entire tells us what the developer actually asked the agent for, which is how we know what's silent. JetBrains: Viva runs as an agent inside the IDE. And the engine follows the review patterns G-Research shared with us.">
+  <p class="kicker">Built with</p>
+  <div style="margin-top:10px">
+    <div class="sponsor"><b>Gemini</b><span>Every check, question and grade, schema-enforced, with retries, a fallback model and a live eval matrix.</span></div>
+    <div class="sponsor"><b>ElevenLabs</b><span>The voice examiner. Signed sessions from the daemon, recording off, and the rubric never sent.</span></div>
+    <div class="sponsor"><b>Entire</b><span>Reads Entire checkpoints for what you asked the agent to do, which is how Viva tells "requested" from "silent".</span></div>
+    <div class="sponsor"><b>JetBrains</b><span>Viva as an ACP agent in AI Chat. Built partly in Air.</span></div>
+    <div class="sponsor"><b>G-Research</b><span>Prechecks before any model call, worst-verdict-wins, hard gates, and evals as tests for prompts.</span></div>
+  </div>
+</section>
+
+<!-- 12 · Close -->
+<section class="slide" data-time="15" data-notes="PEDRO. Next: voice right on Rex's page, better recall on real agent changes, and a team view of who's the only person who understands the payments code. Agents will keep writing more of our code. Viva makes sure that someone on the team can still defend it. Thank you.">
+  <div class="title-wrap">
+    <div>
+      <p class="kicker">Next</p>
+      <ul class="ticks next" style="max-width:900px">
+        <li>Voice on Rex's first screen</li>
+        <li>Recall on real agent changes, measured every PR</li>
+        <li>Bus factor: the files only one person understands</li>
+      </ul>
+      <h2 style="margin-top:46px">You didn't write it.<br/><em>Can you defend it?</em></h2>
+      <p class="team mono soft" style="font-size:19px">github.com/aspekts/viva</p>
+    </div>
+    <div style="text-align:center"><canvas class="rex" data-rex="happy" data-size="300"></canvas><div class="rex-name">Thanks!</div></div>
+  </div>
+</section>
+
+</div>
+
+<div class="notes" id="notes"><div class="meta"><span id="n-slide"></span><span id="n-budget"></span><span id="n-clock"></span></div><div id="n-text"></div></div>
+
+<script>
+// Rex, from the same pixel grid as the buddy site.
+const BODY = [
+  "...........#########..","..........###########.","..........###########.","..........###########.","..........###########.",
+  "..........######......","..........#########...","#........######.......","#.......########......","##.....##########.....",
+  "###...###########.#...","#################.....",".###############......","..#############.......","...###########........",
+  "....#########.........",".....###..###.........",".....##....##.........",".....#......#.........",".....##.....##........",
+  "......................","......................",
+];
+const FACE = { neutral: [[2,13]], shock: [[1,13],[1,14],[2,13],[2,14],[4,18],[4,19],[4,20]], pout: [[2,13],[2,14]], happy: [[1,13],[2,12],[2,14]] };
+for (const canvas of document.querySelectorAll("canvas.rex")) {
+  const size = Number(canvas.dataset.size || 240), mood = canvas.dataset.rex || "neutral";
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d"), cell = Math.floor(size / BODY.length), holes = new Set(FACE[mood].map(([r, c]) => `${r},${c}`));
+  ctx.fillStyle = canvas.dataset.colour || "#1d2433";
+  BODY.forEach((line, r) => [...line].forEach((p, c) => { if (p === "#" && !holes.has(`${r},${c}`)) ctx.fillRect(c * cell, r * cell, cell, cell); }));
+}
+
+// Fit the 1600x900 stage to the window.
+const stage = document.getElementById("stage");
+const fit = () => { const s = Math.min(innerWidth / 1600, innerHeight / 900); stage.style.transform = `translate(-50%, -50%) scale(${s})`; };
+addEventListener("resize", fit); fit();
+
+// Navigation, notes and a timer against the 6-minute slot.
+const slides = [...document.querySelectorAll(".slide")];
+const total = slides.length, SLOT = 360;
+slides.forEach((s, i) => s.insertAdjacentHTML("beforeend", `<div class="foot"><b>Viva</b><span>${String(i + 1).padStart(2, "0")} / ${String(total).padStart(2, "0")}</span></div>`));
+let i = Math.max(0, Math.min(total - 1, Number(location.hash.slice(1)) - 1 || 0));
+let started = null;
+const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+const budgetUntil = (n) => slides.slice(0, n + 1).reduce((t, s) => t + Number(s.dataset.time || 0), 0);
+function show(n) {
+  i = Math.max(0, Math.min(total - 1, n));
+  slides.forEach((s, k) => s.classList.toggle("active", k === i));
+  document.getElementById("progress").style.width = `${((i + 1) / total) * 100}%`;
+  document.getElementById("n-slide").textContent = `Slide ${i + 1} of ${total}`;
+  document.getElementById("n-budget").textContent = `Plan: finish this slide by ${fmt(budgetUntil(i))}`;
+  document.getElementById("n-text").textContent = slides[i].dataset.notes || "";
+  history.replaceState(null, "", `#${i + 1}`);
+  if (started === null && i > 0) started = Date.now();
+}
+setInterval(() => {
+  const el = document.getElementById("n-clock");
+  if (started === null) { el.textContent = "Timer starts on slide 2 · 6:00 slot"; return; }
+  const t = (Date.now() - started) / 1000;
+  el.textContent = `Elapsed ${fmt(t)} / 6:00`;
+  el.className = t > budgetUntil(i) + 10 || t > SLOT ? "over" : "";
+}, 500);
+addEventListener("keydown", (e) => {
+  if (["ArrowRight", "PageDown", " ", "Enter"].includes(e.key)) { e.preventDefault(); show(i + 1); }
+  else if (["ArrowLeft", "PageUp", "Backspace"].includes(e.key)) { e.preventDefault(); show(i - 1); }
+  else if (e.key === "Home") show(0);
+  else if (e.key === "End") show(total - 1);
+  else if (e.key.toLowerCase() === "n") document.getElementById("notes").classList.toggle("on");
+  else if (e.key.toLowerCase() === "t") started = Date.now();
+  else if (e.key.toLowerCase() === "f") (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => {});
+});
+addEventListener("click", (e) => { if (!e.target.closest(".notes")) show(e.clientX > innerWidth / 3 ? i + 1 : i - 1); });
+show(i);
+</script>
+</body>
+</html>

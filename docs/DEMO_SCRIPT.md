@@ -1,5 +1,7 @@
 # Demo script
 
+**Slides:** open `docs/deck/index.html` in a browser. Use the arrow keys or click to move, N for speaker notes with a timer for the 6-minute slot, and F for fullscreen. The deck runs 5:40, including about 2:30 of live demo on slide 5.
+
 About 4 minutes, plus questions. One laptop drives (Marcus's Mac, which has the Gemini and ElevenLabs keys). Pedro speaks, Marcus drives. Rehearsed against live Gemini at 11:40 on Sunday: push blocked in about 6 seconds, answer graded in about 1 second, and the Fog cleared live.
 
 ## 10 minutes before
