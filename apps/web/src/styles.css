@@ -70,3 +70,10 @@ textarea { min-height: 110px; background: #fff; color: var(--ink); border: 1.5px
 .result-blocked h1 { color: var(--pen); }
 .missed { margin: 0; padding-left: 1.2rem; color: var(--pen); font: 0.95rem/1.6 var(--font-code); }
 [role="alert"] { color: var(--pen); font-weight: 600; }
+
+/* Voice exam */
+.voice { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; margin: 0 0 1.5rem; }
+.voice small { flex-basis: 100%; font: 0.8rem var(--font-code); color: var(--ink-soft); }
+.voice-status { font: 0.85rem var(--font-code); color: var(--ink-soft); }
+.question[data-current] { border-left: 3px solid var(--pen); padding-left: 0.9rem; margin-left: -1.05rem; }
+

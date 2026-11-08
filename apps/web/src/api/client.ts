@@ -1,4 +1,4 @@
-import { FogMap, Review, ReviewCode, SavedMemory, VivaEvent, type Answer, type CodeLocation } from "@viva/contracts";
+import { FogMap, Review, ReviewCode, SavedMemory, VivaEvent, VoiceSession, type Answer, type CodeLocation } from "@viva/contracts";
 import mockCode from "../../../../fixtures/mock/code.json";
 import mockFog from "../../../../fixtures/mock/fog.json";
 import mockEmptyFog from "../../../../fixtures/mock/fog-empty.json";
@@ -153,3 +153,10 @@ export async function saveMemory(id: string): Promise<SavedMemory> {
   if (MOCK) return SavedMemory.parse(mockMemory);
   return SavedMemory.parse(await json(`/v1/reviews/${encodeURIComponent(id)}/memory`, { method: "POST" }));
 }
+
+/** A signed ElevenLabs URL for the voice examiner. Throws an ApiError with status 503 when voice isn't set up. */
+export async function getVoiceSession(): Promise<VoiceSession> {
+  if (MOCK) throw new ApiError(503, "voice is unavailable in mock mode");
+  return VoiceSession.parse(await json("/v1/voice/session"));
+}
+

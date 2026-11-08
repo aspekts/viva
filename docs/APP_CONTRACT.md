@@ -190,23 +190,24 @@ FogNode: {
 - Node sizes vary hugely, so use a scale such as `sqrt(size)`.
 - To show fog rolling in, refetch `/v1/fog` and animate the difference between responses. With PR #35, `watch("fog", reload)` tells you when to refetch. Until it lands, poll every couple of seconds.
 
-### Voice exam 📝
+### Voice exam ✅
 
-Proposed, so Sophina can change it. The React app talks to ElevenLabs directly, and the daemon never handles audio.
+The browser talks to ElevenLabs directly, and audio never passes through the daemon.
 
-1. Pass the questions into the ElevenLabs agent as dynamic variables.
-2. The agent calls client tools in the browser:
-   - `highlight_code({ file, lines })` to move the highlight
-   - `end_exam()` to finish
-3. Collect the transcript per question, then send it as `Answer[]` with `mode: "voice"`.
+1. `getVoiceSession()` calls `GET /v1/voice/session`, which returns `{ signedUrl }`, a one-off ElevenLabs URL. It's a 503 when `ELEVENLABS_API_KEY` and `ELEVENLABS_AGENT_ID` aren't set on the daemon. The agent requires signed URLs, so its ID alone can't spend credits.
+2. `VoiceExam` starts the session with the questions as dynamic variables (`person`, `question_count`, `questions`). The rubric (`mustMention`) is never sent.
+3. The agent calls two browser tools:
+   - `ask_question({ question_id })` moves to that question, scrolls to its code and marks it as current
+   - `end_exam()` finishes the session
+4. What the person says streams into the current question's answer box. Answers with speech in them are sent with `mode: "voice"`.
 
 **Fairness rules that aren't optional:**
 
-- Typing must always work, including partway through the exam.
-- Grading only sees the transcript. Never send tone, pace or audio data to it.
-- Show the transcript live, so people can spot mishearing before submitting.
+- Typing always works, including partway through the exam.
+- Grading only sees the transcript. ElevenLabs is set not to record audio.
+- The transcript appears live in the answer boxes, so people can fix mishearing before submitting.
 
-`VITE_ELEVENLABS_AGENT_ID` is exposed to the browser, so it must only be a public agent ID. Never put API keys in `apps/web`.
+Never put the ElevenLabs API key in `apps/web`.
 
 ### Live events 🔜 PR #35
 
