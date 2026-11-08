@@ -21,7 +21,7 @@ const MOCK = params.has("mock");
 const MOCK_EMPTY = MOCK && params.has("empty");
 const MOCK_ROLL = MOCK && params.has("roll");
 const MOCK_ROLL_MS = 4000;
-let mockRollStep = 0;
+const mockRollStart = Date.now();
 const mockReview = !MOCK ? mockSampleReview : params.has("hard") ? mockHardGate : params.has("failed") ? mockFailed : mockSampleReview;
 
 export const isMockMode = MOCK;
@@ -68,7 +68,7 @@ export function watch(topic: VivaEvent["type"], refresh: () => void): () => void
 
 /** Maps the most recently pushed repo. `repoPath` is null until the daemon has seen a push. */
 export async function getFog(): Promise<FogMap> {
-  if (MOCK_ROLL) return rollFog(FogMap.parse(mockFog), mockRollStep++);
+  if (MOCK_ROLL) return rollFog(FogMap.parse(mockFog), Math.floor((Date.now() - mockRollStart) / MOCK_ROLL_MS));
   if (MOCK) return FogMap.parse(MOCK_EMPTY ? mockEmptyFog : mockFog);
   return FogMap.parse(await json("/v1/fog"));
 }

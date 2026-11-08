@@ -95,8 +95,9 @@ describe("mock roll", () => {
     expect(refresh).toHaveBeenCalledTimes(2);
     stop();
     const first = await getFog();
-    const second = await getFog();
-    expect(second.nodes.map((n) => n.fog)).not.toEqual(first.nodes.map((n) => n.fog));
+    expect((await getFog()).nodes).toEqual(first.nodes);
+    vi.advanceTimersByTime(4000);
+    expect((await getFog()).nodes.map((n) => n.fog)).not.toEqual(first.nodes.map((n) => n.fog));
   });
 });
 
