@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { Review } from "@viva/contracts";
 import { RpcError, VivaAcpAgent } from "./acp.js";
@@ -44,8 +45,9 @@ describe("ACP agent", () => {
     expect(await agent.handle("session/prompt", { sessionId, prompt: text("review") })).toEqual({ stopReason: "end_turn" });
     expect(said()).toContain("Question 1 of 2");
     const call = updates.find((u) => u.params.update.sessionUpdate === "tool_call")!.params.update;
-    expect(call.locations).toEqual([{ path: "/repo/src/webhook.js", line: 6 }]);
-    expect(call.content).toEqual([{ type: "diff", path: "/repo/src/webhook.js", oldText: "check(); charge();\n", newText: "charge(); check();\n" }]);
+    const file = join("/repo", "src/webhook.js");
+    expect(call.locations).toEqual([{ path: file, line: 6 }]);
+    expect(call.content).toEqual([{ type: "diff", path: file, oldText: "check(); charge();\n", newText: "charge(); check();\n" }]);
     const plans = () => updates.filter((u) => u.params.update.sessionUpdate === "plan").map((u) => (u.params.update.entries as { status: string }[]).map((e) => e.status));
     expect(plans().at(-1)).toEqual(["in_progress", "pending"]);
 
