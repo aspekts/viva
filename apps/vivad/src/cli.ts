@@ -142,6 +142,11 @@ function installHook(): number {
 export async function main(args = process.argv.slice(2)): Promise<number> {
   const [command, sub, flag, agent] = args;
   if (command === "gate") return gate();
+  if (command === "acp") {
+    const { serveAcp } = await import("./acp.js");
+    serveAcp();
+    return new Promise<number>(() => {});
+  }
   if (command === "hook" && sub === "install") return installHook();
   if (command === "ledger" && sub === "sync") {
     const synced = await syncLedger(REPO);
