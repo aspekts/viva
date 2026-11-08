@@ -4,7 +4,7 @@
 
 Viva shows which parts of an AI-written codebase no human understands, then questions you on the riskiest parts before you ship them.
 
-Built at HackTheBurgh XIII. See [the design](docs/DESIGN.md), [the architecture](docs/ARCHITECTURE.md), [the app contract](docs/APP_CONTRACT.md), [demo](docs/DEMO.md), [the frontend handoff](docs/FRONTEND_HANDOFF.md) and [the task list](docs/TASKS.md).
+Built at HackTheBurgh XIII. See [the design](docs/DESIGN.md), [the architecture](docs/ARCHITECTURE.md), [the app contract](docs/APP_CONTRACT.md), [demo](docs/DEMO.md), [the demo script](docs/DEMO_SCRIPT.md), [the frontend handoff](docs/FRONTEND_HANDOFF.md) and [the task list](docs/TASKS.md).
 
 ## Set up (about 10 minutes)
 
