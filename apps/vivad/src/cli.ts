@@ -13,6 +13,13 @@ import { formatMemory, formatSaved, repoRelative } from "./memory.js";
 import { controllingTerminal, pushContext } from "./terminal.js";
 
 const WEB = process.env.VIVA_WEB ?? "http://localhost:5173";
+/** The AnimePix buddy site, opened for high-risk pushes. VIVA_BUDDY=off opens the exam room instead. */
+const BUDDY = process.env.VIVA_BUDDY === "off" ? null : (process.env.VIVA_BUDDY ?? "http://localhost:5174");
+const reviewLink = (site: string, id: string) => `${site}/?review=${encodeURIComponent(id)}`;
+
+async function openInBrowser(link: string): Promise<void> {
+  try { await open(link, { wait: false }); } catch { /* The printed link remains usable. */ }
+}
 const MARKER = "# viva gate";
 
 const VIVA_ROOT = resolve(fileURLToPath(new URL("../../..", import.meta.url))).replaceAll("\\", "/");
@@ -52,10 +59,11 @@ function commitIntent(base: string): string | undefined {
   }
 }
 
-export async function presentReview(review: Review, client: DaemonClient): Promise<number> {
+export async function presentReview(review: Review, client: DaemonClient, preferTerminal = false): Promise<number> {
   const context = pushContext(process.env, !!(process.stderr.isTTY || process.stdout.isTTY));
   if (review.stage === "awaiting-exam") {
-    const input = context.terminal ? controllingTerminal() : null;
+    // Desktop pushes go to the site; explicit `viva exam` and remote terminals keep Ink.
+    const input = context.terminal && (preferTerminal || !context.openBrowser) ? controllingTerminal() : null;
     if (input) {
       const output = process.stderr.isTTY ? process.stderr : process.stdout;
       const completed = await runExam(review, client, input, output);
@@ -65,11 +73,10 @@ export async function presentReview(review: Review, client: DaemonClient): Promi
       }
       review = completed;
     } else {
-      const link = `${WEB}/?review=${encodeURIComponent(review.id)}`;
+      const link = reviewLink(BUDDY ?? WEB, review.id);
       console.error(`viva: exam required; push blocked. Complete ${link} or run pnpm viva exam ${review.id} in a terminal, then git push again.`);
-      if (context.openBrowser) {
-        try { await open(link, { wait: false }); } catch { /* The printed link remains usable. */ }
-      }
+      if (BUDDY) console.error(`viva: the full exam room, with the code, is at ${reviewLink(WEB, review.id)}`);
+      if (context.openBrowser) await openInBrowser(link);
       return 1;
     }
   }
@@ -80,6 +87,12 @@ export async function presentReview(review: Review, client: DaemonClient): Promi
   console.log(`viva: ${review.gate.verdict} (${review.gate.reason})`);
   if (!allowsPush(review.gate)) {
     console.error(`viva: push blocked. Run pnpm viva feedback ${review.id} for missed concepts.${review.gate.skippable ? ` Run pnpm viva exam ${review.id} to review the verdict or skip with debt.` : " Hard gate: resolve the flagged change; this cannot be skipped."}`);
+    const link = reviewLink(BUDDY ?? WEB, review.id);
+    console.error(`viva: review this push at ${link}`);
+    // It must never throw: gate() fails open on unexpected errors, which would let this blocked push through.
+    try {
+      if (!preferTerminal && context.openBrowser) await openInBrowser(link);
+    } catch { /* The printed instructions remain. */ }
   }
   return allowsPush(review.gate) ? 0 : 1;
 }
@@ -120,20 +133,31 @@ async function exam(id: string): Promise<number> {
   const review = await client.review(id);
   const context = pushContext(process.env, !!(process.stderr.isTTY || process.stdout.isTTY));
   const input = context.terminal ? controllingTerminal() : null;
-  if (!input) return presentReview(review, client);
+  if (!input) return presentReview(review, client, true);
   const completed = await runExam(review, client, input, process.stderr.isTTY ? process.stderr : process.stdout);
-  return completed ? presentReview(completed, client) : 1;
+  return completed ? presentReview(completed, client, true) : 1;
 }
 
 /** Appends to the hook, as core.hooksPath would bypass Entire's hooks. */
 function installHook(): number {
   const path = resolve(REPO, git("rev-parse", "--git-path", "hooks"), "pre-push");
   const existing = existsSync(path) ? readFileSync(path, "utf8") : "#!/bin/sh\n";
+  const legacy = `VIVA_REPO="$(pwd)" pnpm --silent --dir "${VIVA_ROOT}" viva gate || exit $?`;
+  const quotedRoot = `'${VIVA_ROOT.replaceAll("'", "'\"'\"'")}'`;
+  // Corepack selects pnpm from cwd before pnpm handles --dir. Preserve the pushed
+  // repo, then enter Viva's workspace so another project's pnpm version cannot win.
+  const command = `(export VIVA_REPO="$(pwd)"; cd ${quotedRoot} || exit 0; pnpm --silent viva gate) || exit $?`;
   if (existing.includes(MARKER)) {
+    if (existing.includes(legacy)) {
+      writeFileSync(path, existing.replace(legacy, command));
+      chmodSync(path, 0o755);
+      console.log(`viva: updated ${path}`);
+      return 0;
+    }
     console.log("viva: hook already installed");
     return 0;
   }
-  writeFileSync(path, `${existing.trimEnd()}\n\n${MARKER}\nVIVA_REPO="$(pwd)" pnpm --silent --dir "${VIVA_ROOT}" viva gate || exit $?\n`);
+  writeFileSync(path, `${existing.trimEnd()}\n\n${MARKER}\n${command}\n`);
   chmodSync(path, 0o755);
   console.log(`viva: installed ${path}`);
   return 0;
