@@ -3,6 +3,7 @@ import type { FogMap, FogNode } from "@viva/contracts";
 import { getFog, watch } from "../api/client";
 import { fogShifts, type FogShift } from "./fog-shifts";
 import { soleOwner, teamOf, teammateColour, understanders } from "./teammates";
+import { labelDetail, splitPath } from "./tile-label";
 import { layoutTreemap, type Rect } from "./treemap";
 
 /** The map is laid out in a 16:9 box, then drawn in percentages so it scales to any screen. */
@@ -33,6 +34,8 @@ interface FogTileProps {
 const FogTile = ({ node, rect, shift, busFactor }: FogTileProps) => {
   const owner = soleOwner(node);
   const best = understanders(node)[0];
+  const detail = labelDetail(rect);
+  const { dir, name } = splitPath(node.file);
   const busFactorNote = owner ? ` Only ${owner} understands this.` : "";
   return (
   <article
@@ -55,16 +58,23 @@ const FogTile = ({ node, rect, shift, busFactor }: FogTileProps) => {
       } as React.CSSProperties
     }
   >
-    <div className="fog-label">
-      <span className="fog-file">{nodeName(node)}</span>
-      <small>
-        {node.knownBy.map((k) => (
-          <span key={k.person} className="fog-dot" style={{ background: teammateColour(k.person) }} aria-hidden="true" />
-        ))}
-        {knownByLabel(node)}
-      </small>
-      {owner && <strong className="fog-sole">Only {owner}</strong>}
-    </div>
+    {detail !== "none" && (
+      <div className="fog-label">
+        <span className="fog-file">{node.symbol ? `${name} › ${node.symbol}` : name}</span>
+        {detail === "full" && (
+          <>
+            {dir && <small>{dir}</small>}
+            <small>
+              {node.knownBy.map((k) => (
+                <span key={k.person} className="fog-dot" style={{ background: teammateColour(k.person) }} aria-hidden="true" />
+              ))}
+              {knownByLabel(node)}
+            </small>
+            {owner && <strong className="fog-sole">Only {owner}</strong>}
+          </>
+        )}
+      </div>
+    )}
   </article>
   );
 };

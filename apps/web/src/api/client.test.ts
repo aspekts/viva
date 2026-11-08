@@ -101,6 +101,36 @@ describe("mock roll", () => {
   });
 });
 
+describe("getFog", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const daemon = () => {
+    const fetch = vi.fn(async () => new Response(JSON.stringify({ repoPath: null, generatedAt: new Date().toISOString(), debt: 0, nodes: [] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetch);
+    return fetch;
+  };
+
+  it("maps the most recently pushed repo by default", async () => {
+    const fetch = daemon();
+    const { getFog } = await client("");
+    await getFog();
+    expect(fetch).toHaveBeenCalledWith("/v1/fog", undefined);
+  });
+
+  it("maps the repo named in ?repo, so the Fog can show any repo without a push", async () => {
+    const fetch = daemon();
+    const { getFog } = await client("?repo=D%3A%2Frepos%2Fviva");
+    await getFog();
+    expect(fetch).toHaveBeenCalledWith("/v1/fog?repo=D%3A%2Frepos%2Fviva", undefined);
+  });
+
+  it("rejects with the status when the daemon cannot map that repo, so the page can say so", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: "internal error" }), { status: 500 })));
+    const { getFog } = await client("?repo=D%3A%2Fgone");
+    await expect(getFog()).rejects.toThrow("500");
+  });
+});
+
 describe("reviews", () => {
   afterEach(() => vi.unstubAllGlobals());
 
