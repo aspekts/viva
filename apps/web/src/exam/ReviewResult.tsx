@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import type { Review } from "@viva/contracts";
 import { describeGate } from "./gate";
 
@@ -11,11 +12,14 @@ interface ReviewResultProps {
 /** The finished review: whether the push can go ahead, why, what was missed, and skip if allowed. */
 export const ReviewResult = ({ review, skipping, skipError, onSkip }: ReviewResultProps) => {
   const { gate } = review;
+  const heading = useRef<HTMLHeadingElement>(null);
+  // The exam swaps for the result, so move focus there to have the verdict read out.
+  useEffect(() => heading.current?.focus(), []);
   if (!gate) return null;
   const { allowed, canSkip, title, detail } = describeGate(gate);
   return (
     <section>
-      <h1>{allowed ? "Push allowed" : "Push blocked"}</h1>
+      <h1 ref={heading} tabIndex={-1}>{allowed ? "Push allowed" : "Push blocked"}</h1>
       <h2>{title}</h2>
       <p>{detail}</p>
       {review.grades.map((grade) => {
@@ -38,10 +42,11 @@ export const ReviewResult = ({ review, skipping, skipError, onSkip }: ReviewResu
       })}
       {skipError && <p role="alert">{skipError}</p>}
       {canSkip && (
-        <button onClick={onSkip} disabled={skipping}>
-          {skipping ? <span role="status">Skipping…</span> : "Push anyway, leave it under fog"}
+        <button onClick={skipping ? undefined : onSkip} aria-disabled={skipping}>
+          Push anyway, leave it under fog
         </button>
       )}
+      <p role="status">{skipping ? "Skipping…" : ""}</p>
     </section>
   );
 };

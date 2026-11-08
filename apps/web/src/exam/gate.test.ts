@@ -1,6 +1,7 @@
 import { GateReason, type Gate } from "@viva/contracts";
 import { describe, expect, it } from "vitest";
-import { describeGate, skipErrorMessage } from "./gate";
+import type { Review } from "@viva/contracts";
+import { describeGate, newerReview, skipErrorMessage } from "./gate";
 import { ApiError } from "../api/errors";
 
 const gate = (reason: GateReason, verdict: Gate["verdict"], skippable = true): Gate => ({ reason, verdict, skippable });
@@ -47,5 +48,30 @@ describe("skipErrorMessage", () => {
   it("suggests a retry otherwise", () => {
     expect(skipErrorMessage(new ApiError(500, "boom"))).toContain("Try again");
     expect(skipErrorMessage(new Error("offline"))).toContain("Try again");
+  });
+});
+
+describe("describeGate copy", () => {
+  it("only mentions pushing on when skip is on offer", () => {
+    expect(describeGate(gate("exam-failed", "reject")).detail).toMatch(/push on/i);
+    expect(describeGate(gate("exam-failed", "reject", false)).detail).not.toMatch(/push on/i);
+    expect(describeGate(gate("too-large", "defer", false)).detail).not.toMatch(/push on/i);
+  });
+});
+
+describe("newerReview", () => {
+  const review = (id: string, reason: Gate["reason"], verdict: Gate["verdict"]): Review =>
+    ({ id, gate: { reason, verdict, skippable: true } }) as Review;
+  const skipped = review("a", "skipped-with-debt", "approve");
+  const failed = review("a", "exam-failed", "reject");
+
+  it("drops a stale blocked read after a skip", () => {
+    expect(newerReview(skipped, failed)).toBe(skipped);
+  });
+
+  it("accepts anything else", () => {
+    expect(newerReview(null, failed)).toBe(failed);
+    expect(newerReview(failed, skipped)).toBe(skipped);
+    expect(newerReview(skipped, review("b", "exam-failed", "reject")).id).toBe("b");
   });
 });

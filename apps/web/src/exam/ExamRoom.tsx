@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { Review } from "@viva/contracts";
 import { reviewLoader, skipReview, submitAnswers, watch } from "../api/client";
 import { buildAnswers, countUnanswered, type Drafts } from "./answers";
-import { skipErrorMessage } from "./gate";
+import { newerReview, skipErrorMessage } from "./gate";
 import { loadErrorMessage, submitErrorMessage } from "./messages";
 import { QuestionCode } from "./QuestionCode";
 import { ReviewResult } from "./ReviewResult";
@@ -22,7 +22,7 @@ export function ExamRoom({ reviewId }: { reviewId: string | null }) {
     const loader = reviewLoader(
       reviewId,
       (loaded) => {
-        if (loaded) setReview(loaded);
+        if (loaded) setReview((current) => newerReview(current, loaded));
         setEmpty(!loaded);
         setLoadError(null);
       },
