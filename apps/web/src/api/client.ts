@@ -5,6 +5,10 @@ import mockEmptyFog from "../../../../fixtures/mock/fog-empty.json";
 import mockHardGate from "../../../../fixtures/mock/review-hard-gate.json";
 import mockMemory from "../../../../fixtures/mock/memory.json";
 import mockSampleReview from "../../../../fixtures/mock/review.json";
+import { ApiError } from "./errors";
+import { mockSubmit } from "./mock";
+
+export { ApiError };
 
 /**
  * Mock mode lets the UI run with no daemon: add ?mock to the URL. Add &empty for
@@ -15,12 +19,7 @@ const MOCK = params.has("mock");
 const MOCK_EMPTY = MOCK && params.has("empty");
 const mockReview = MOCK && params.has("hard") ? mockHardGate : mockSampleReview;
 
-/** Handle the status, not the message. 409 means the review can't do that now. */
-export class ApiError extends Error {
-  constructor(readonly status: number, message: string) {
-    super(message);
-  }
-}
+export const isMockMode = MOCK;
 
 async function json(path: string, init?: RequestInit): Promise<unknown> {
   const response = await fetch(path, init);
@@ -125,7 +124,7 @@ export async function skipReview(id: string): Promise<Review> {
 }
 
 export async function submitAnswers(id: string, answers: Answer[]): Promise<Review> {
-  if (MOCK) return Review.parse({ ...mockReview, stage: "done", gate: { verdict: "approve", reason: "exam-passed", skippable: true } });
+  if (MOCK) return mockSubmit(answers);
   return Review.parse(
     await json(`/v1/reviews/${id}/answers`, {
       method: "POST",

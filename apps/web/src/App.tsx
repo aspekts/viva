@@ -19,7 +19,13 @@ export function App() {
           Exam room
         </button>
       </nav>
-      {view === "fog" ? <FogView /> : <ExamRoom reviewId={reviewId} />}
+      {/* Both stay mounted, so typed answers survive a trip to the Fog. */}
+      <div hidden={view !== "fog"}>
+        <FogView />
+      </div>
+      <div hidden={view !== "exam"}>
+        <ExamRoom reviewId={reviewId} />
+      </div>
     </main>
   );
 }

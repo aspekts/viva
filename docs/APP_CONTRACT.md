@@ -224,9 +224,9 @@ VivaEvent =
 
 ## Mock mode
 
-Adding `?mock` loads `fixtures/mock/fog.json`, `fixtures/mock/review.json` and, with PR #8, `fixtures/mock/code.json` through the same schemas as live data. Submitting answers returns a pass.
+Adding `?mock` loads `fixtures/mock/fog.json`, `fixtures/mock/review.json` and, with PR #8, `fixtures/mock/code.json` through the same schemas as live data.
 
-**Known problem on `main`:** the exam room also falls back to mock data when there's no `review` in the URL, even without `?mock`. Opening the Exam room tab with the daemon running shows a fake exam, so don't treat it as real. PR #38 fixes it: with no ID, `getLatestReview()` returns the newest review or `null`, and only `?mock` gives sample data. `?mock&empty` gives `null`.
+With no `review` in the URL the exam room opens the newest review, or shows an empty state, and only `?mock` gives sample data. In mock mode, submitting blank answers returns a failed review with the missed rubric points, and answered questions return a pass.
 
 With PR #37, `?mock&empty` loads `fixtures/mock/fog-empty.json` and, with PR #38, an empty Exam room. With PR #39, `?mock&hard` loads `fixtures/mock/review-hard-gate.json`, a review blocked by a hard gate, where skip is refused. To test another state, add a fixture, for example `review-failed.json`, and keep it valid against the schema.
 

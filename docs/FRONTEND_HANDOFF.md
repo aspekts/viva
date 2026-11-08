@@ -85,7 +85,6 @@ Build these against mock data and the shapes proposed in the contract. If a fina
 
 ## Good to know
 
-- **The exam tab can show fake data** on `main`. With no `review` in the URL, it falls back to sample data even when the daemon is running. [PR #38](https://github.com/aspekts/viva/pull/38) fixes this.
 - **Only two states are visible:** `awaiting-exam` and `done`. Use a generic loading state, even with live events.
 - **Reviews vanish when the daemon restarts.** Show a "run `git push` again" message on a 404.
 - **Grading takes a moment,** so disable buttons while a request is in flight.
@@ -115,6 +114,7 @@ Newest first. Add a line when something changes what the frontend can rely on.
 
 | When | What changed |
 |---|---|
+| Sun 00:10 | Typed exam flow ([#12](https://github.com/aspekts/viva/issues/12)): typed answers, a blank answer scores zero, and the result shows what you missed. `ApiError` now lives in `api/errors.ts` (still exported from `client.ts`). Mock submit grades blank answers as a fail |
 | Sat 21:43 | [PR #39](https://github.com/aspekts/viva/pull/39) open, not merged: `skipReview(id)` in `client.ts`. Errors from `client.ts` are now an `ApiError` with a `status`, and a refused skip is a 409. `?mock&hard` loads a hard-gate review. Sophina, the skip button is yours to add |
 | Sat 21:42 | [PR #38](https://github.com/aspekts/viva/pull/38) open, not merged: with no ID in the URL, the Exam room opens the newest review and stays on it, or shows an empty state. `getReview(id)` now needs an ID and no longer returns sample data outside `?mock`. Sophina, design the empty state, and see it with `?mock&empty` |
 | Sat 21:40 | [PR #37](https://github.com/aspekts/viva/pull/37) open, not merged: the Fog maps the most recently pushed repo. `FogMap.repoPath` is null with no nodes until a push, so Kay, design that empty state, and see it with `?mock&empty`. A daemon restart forgets the repo |
