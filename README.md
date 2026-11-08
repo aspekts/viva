@@ -6,43 +6,134 @@ Viva shows which parts of an AI-written codebase no human understands, then ques
 
 Built at HackTheBurgh XIII. See [the design](docs/DESIGN.md), [the architecture](docs/ARCHITECTURE.md), [the app contract](docs/APP_CONTRACT.md), [demo](docs/DEMO.md), [the frontend handoff](docs/FRONTEND_HANDOFF.md) and [the task list](docs/TASKS.md).
 
-## Quick start
+## Set up (about 10 minutes)
 
-You need Node 22+ and pnpm. It works on Windows and macOS.
+Works on macOS and Windows. Run the commands in Terminal (macOS) or PowerShell (Windows).
+
+**1. Install Node.js 22 or newer** from [nodejs.org](https://nodejs.org) (the LTS button). Check it worked:
 
 ```bash
+node -v        # should print v22 or higher
+```
+
+**2. Install pnpm**, the package manager this repo uses:
+
+```bash
+npm install -g pnpm
+```
+
+If that fails with a permissions error, run `corepack enable pnpm` instead.
+
+**3. Get the code and install it:**
+
+```bash
+git clone https://github.com/aspekts/viva.git
+cd viva
 pnpm install
-cp .env.example .env
+```
+
+**4. Create your `.env` file** (your private settings, never committed):
+
+```bash
+cp .env.example .env          # macOS
+copy .env.example .env        # Windows
+```
+
+Then open `.env` and pick one:
+
+| You want | Set in `.env` |
+|---|---|
+| To try it with no account (fake questions) | Leave it as it is: `VIVA_LLM=mock` |
+| Real questions from Gemini | `VIVA_LLM=gemini` and `GEMINI_API_KEY=` your own free key from [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
+| The voice exam (optional) | `ELEVENLABS_API_KEY` and `ELEVENLABS_AGENT_ID`. Ask Marcus privately, and never paste them in GitHub or chat |
+
+**5. Start Viva** and leave this terminal open:
+
+```bash
 pnpm dev
 ```
 
-- **Web UI:** http://localhost:5173
-- **Viva buddy (Rex):** http://localhost:5174, the separate site a high-risk push opens. Try it with no daemon at http://localhost:5174/?mock (add `&failed` or `&hard`)
-- **Daemon:** http://127.0.0.1:4317/v1/health
-- **Frontend only:** run `pnpm dev:web` and open http://localhost:5173/?mock to use sample data with no daemon.
+Check these open in your browser:
 
-## Try the gate on a repo
+| What | Address |
+|---|---|
+| Web app (the Fog and the exam room) | http://localhost:5173 |
+| Rex, the buddy a risky push opens | http://localhost:5174 |
+| The daemon, Viva's engine | http://127.0.0.1:4317/v1/health should say `{"ok":true,...}` |
 
-With `pnpm dev` running, from this folder:
+## Try it in 2 minutes
+
+With `pnpm dev` still running, open a **second** terminal in the `viva` folder:
 
 ```bash
-VIVA_REPO=/path/to/some/repo pnpm viva hook install
+pnpm demo                      # builds a small shop repo next to this one, with one risky agent commit
+cd ../viva-demo-shop
+git push
 ```
 
-Commit a change in that repo and `git push`:
+The push is blocked and Rex pops up in your browser with the change the agent made without being asked. Answer the question (typed, or **Answer by voice** in the exam room), then run `git push` again and it goes through.
 
-- **Local terminal / desktop IDE:** risky changes open the Viva buddy (Rex) site in your browser, where Rex shows the risk, flagged decisions and questions. The hook prints the review links and blocks this push immediately. Complete the browser exam, then retry `git push`. Blocked verdicts also open the site. Low-risk approvals go through without opening it.
-- **Terminal answers:** run `pnpm viva exam <reviewId>` to answer in the terminal instead. SSH and headless terminals also use this flow. Esc offers an explicit **skip with debt**; hard gates cannot be skipped. Ctrl-C leaves the exam unfinished and blocks the push.
-- **Coding agent / CI:** the hook only prints the review links and exits non-zero immediately, without opening a browser or polling for a person. Set `VIVA_NONINTERACTIVE=1` for tools without a recognized agent marker. Complete the exam, then retry `git push`.
-- **ACP editors (JetBrains, Zed and others):** `pnpm viva acp` runs Viva as an Agent Client Protocol agent, so the exam happens in the editor's agent chat: say "review", answer each question, and read the verdict. Each question also points the editor at its code. Register `<viva>/bin/viva-acp` as the command, as editors start agents without your shell PATH. The daemon must be running.
-- **Retry:** the same repository, commit range and developer reuse the completed decision, including after a daemon restart. A failed exam still blocks. Skipping is an explicit debt decision, not a pass or a mastery attestation.
-- **Daemon down / infrastructure crash:** the hook warns and allows the push, as before.
+- With `VIVA_LLM=mock`, a passing answer must contain the word `behaviour`, for example: "The behaviour changes because a duplicate event can charge the card again."
+- With Gemini, explain what really happens: the duplicate check now runs after the charge, so a repeated event charges the card twice.
+- `pnpm demo` again resets the shop. It never pushes to GitHub.
 
-Set `VIVA_BUDDY=off` to open the exam room instead, or `VIVA_BUDDY=<url>` to point elsewhere.
+## Use it on your own repo
 
-To install the hook in this checkout, run `pnpm viva hook install`. Each developer installs it once in each repo. The site and daemon must be running via `pnpm dev`.
+From the `viva` folder, once per repo:
 
-To test the complete push flow without sending changes to GitHub, run `pnpm demo` from this checkout, then `cd ../viva-demo-shop` and `git push` in another terminal. The demo creates a local bare remote and an unpushed risky payment change with the hook installed. **Running `pnpm demo` again deletes and rebuilds those demo directories.** With `VIVA_LLM=mock` in `.env`, this needs no API key; the mock proves the flow, not real risk detection. Its passing answer must include the word `behaviour`, for example: "The behaviour changes because a duplicate event can charge the card again." After passing on the site, retry `git push`.
+```bash
+VIVA_REPO=/path/to/your/repo pnpm viva hook install          # macOS
+$env:VIVA_REPO="C:\path\to\your\repo"; pnpm viva hook install   # Windows PowerShell
+```
+
+Then commit and `git push` in that repo as normal. `pnpm dev` must be running in the `viva` folder. If Viva isn't running, your push goes through with a warning: Viva never blocks you because it's down.
+
+## Where you answer
+
+| Where | How |
+|---|---|
+| **Browser (default)** | A risky push opens Rex at http://localhost:5174. Answer there, or follow the link to the full exam room with the code |
+| **Voice** | In the exam room, click **Answer by voice**. What you say appears in the answer box, so you can fix mishearing or type instead |
+| **Terminal** | `pnpm viva exam <reviewId>`, using the ID the push printed. Esc skips with debt, Ctrl-C leaves it unfinished and the push stays blocked |
+| **WebStorm or another JetBrains IDE** | Viva as an agent in AI Chat. See [below](#webstorm-and-other-jetbrains-ides) |
+| **Coding agents and CI** | The hook prints the review links and blocks. A person completes the exam, then the push is retried |
+
+Set `VIVA_BUDDY=off` in `.env` to open the exam room instead of Rex.
+
+### WebStorm and other JetBrains IDEs
+
+Viva runs as an [ACP](https://agentclientprotocol.com) agent, so the exam happens in the IDE's AI Chat. It shows each question with a diff of the code, ticks off progress, and Rex walks you through what you missed.
+
+1. Keep `pnpm dev` running.
+2. Create the file `~/.jetbrains/acp.json` (or in AI Chat click **⋯ → Add Custom Agent**, which opens it) with the full path to `bin/viva-acp` in your `viva` folder:
+
+```json
+{
+  "default_mcp_settings": {},
+  "agent_servers": {
+    "Viva": { "command": "/Users/you/Documents/Code/viva/bin/viva-acp", "args": [], "env": {} }
+  }
+}
+```
+
+3. Quit and reopen the IDE, open your repo, and pick **Viva** in AI Chat.
+4. Type `/review`. Answer each question, then `/guide` after a failed exam, or `/skip` to push with debt.
+
+Other ACP editors, such as Zed, take the same command. `bin/viva-acp` is a shell script, so on Windows use Git Bash or WSL to run it.
+
+## If something goes wrong
+
+| Problem | Fix |
+|---|---|
+| `pnpm: command not found` | Step 2 again, then open a new terminal |
+| `git push` goes straight through | Is `pnpm dev` running? Did you run `hook install` for that repo? Look for a `viva:` line in the push output |
+| The page says it can't load the review | The daemon restarted and forgot it. Run `git push` again |
+| Gemini errors or `429` | Your key has hit its free limit. Wait a minute, or use `VIVA_LLM=mock` |
+| "Voice isn't set up on this daemon" | Add the two `ELEVENLABS_` values to `.env` and restart `pnpm dev` |
+| Viva isn't listed in WebStorm | Check `acp.json` is valid JSON with the full path, then quit and reopen. AI Chat → ⋯ → **Get ACP Logs** shows errors |
+| Something else | Run `pnpm check`. It runs every test and tells you what broke |
+
+## More detail
 
 Run the commands below from this Viva checkout. Set `VIVA_REPO` to the target repo when handing feedback to an agent so it runs there.
 
@@ -67,7 +158,9 @@ Reviews and Fog loads start a background refresh of `refs/notes/viva` from `orig
 
 | Command | What it does |
 |---|---|
-| `pnpm dev` | Runs the daemon and web UI |
+| `pnpm dev` | Runs the daemon, the web app and Rex. Leave it running |
+| `pnpm demo` | Builds the demo shop repo next to this one, ready to `git push` |
+| `pnpm viva acp` | Runs Viva as an ACP agent for JetBrains and other editors (`bin/viva-acp` wraps it) |
 | `pnpm viva exam <reviewId>` | Opens an existing exam or verdict in the terminal |
 | `pnpm viva feedback <reviewId> [--agent claude\|codex]` | Prints missed concepts; optionally hands them to the named agent |
 | `pnpm viva remember <reviewId>` | After a pass, saves your answers as project memory in `.viva/memory/` (also `m` in the terminal exam) |

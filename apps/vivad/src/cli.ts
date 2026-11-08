@@ -198,7 +198,7 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
     console.log(formatMemory(file, await readMemory(root, file)));
     return 0;
   }
-  console.log("usage: viva gate | viva hook install | viva ledger sync | viva exam <reviewId> | viva feedback <reviewId> [--agent claude|codex] | viva remember <reviewId> | viva memory <file>");
+  console.log("usage: viva gate | viva acp | viva hook install | viva ledger sync | viva exam <reviewId> | viva feedback <reviewId> [--agent claude|codex] | viva remember <reviewId> | viva memory <file>");
   return command ? 1 : 0;
 }
 
