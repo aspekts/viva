@@ -1,0 +1,17 @@
+{
+  "reviewId": "mock-review",
+  "files": [".viva/memory/src/webhook.ts.md"],
+  "entries": [{
+    "id": "mock-review/q1",
+    "reviewId": "mock-review",
+    "questionId": "q1",
+    "location": { "file": "src/webhook.ts", "lines": [38, 44] },
+    "symbols": ["handleWebhook", "chargeCard"],
+    "claim": "Moved idempotency check after the charge call",
+    "question": "Say the first attempt charges the card, then times out. What happens on the retry?",
+    "explanation": "The idempotency check has to run before the charge. If it runs after, a retry after a timeout charges the card twice, so the check stays first on purpose.",
+    "person": "Marcus",
+    "at": "2026-11-07T18:05:00.000Z",
+    "commit": "def456"
+  }]
+}

@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import type { Review } from "@viva/contracts";
-import { getReview, isMockMode, submitAnswers } from "../api/client";
+import { reviewLoader, submitAnswers, watch } from "../api/client";
 import { buildAnswers, countUnanswered, type Drafts } from "./answers";
 import { loadErrorMessage, submitErrorMessage } from "./messages";
+import { QuestionCode } from "./QuestionCode";
 import { pushAllowed } from "./verdict";
 
 const ReviewResult = ({ review }: { review: Review }) => {
@@ -44,23 +45,28 @@ export function ExamRoom({ reviewId }: { reviewId: string | null }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-
-  const hasReview = isMockMode || reviewId !== null;
+  const [empty, setEmpty] = useState(false);
 
   useEffect(() => {
-    if (!hasReview) return;
-    let cancelled = false;
-    getReview(reviewId).then(
-      (loaded) => !cancelled && setReview(loaded),
-      (e: unknown) => !cancelled && setLoadError(loadErrorMessage(e)),
+    const loader = reviewLoader(
+      reviewId,
+      (loaded) => {
+        if (loaded) setReview(loaded);
+        setEmpty(!loaded);
+        setLoadError(null);
+      },
+      (e) => setLoadError(loadErrorMessage(e)),
     );
+    loader.load();
+    const stopWatching = watch("review", loader.load);
     return () => {
-      cancelled = true;
+      stopWatching();
+      loader.stop();
     };
-  }, [reviewId, hasReview]);
+  }, [reviewId]);
 
-  if (!hasReview) return <p>No exam to show. Push a risky change and open the link it prints.</p>;
   if (loadError) return <p role="alert">{loadError}</p>;
+  if (empty) return <p>No reviews yet. Run git push in a repo with the Viva hook, and your exam appears here.</p>;
   if (!review) return <p role="status">Loading the exam…</p>;
   if (review.gate) return <ReviewResult review={review} />;
 
@@ -91,6 +97,7 @@ export function ExamRoom({ reviewId }: { reviewId: string | null }) {
           <small>
             {q.location.file}:{q.location.lines[0]}
           </small>
+          <QuestionCode reviewId={review.id} location={q.location} />
           <textarea
             value={drafts[q.id] ?? ""}
             disabled={submitting}

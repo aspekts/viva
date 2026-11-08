@@ -1,5 +1,5 @@
 import type { CheckResult, ExamPlan, Grade } from "@viva/contracts";
-import type { LlmProvider, LlmRequest, LlmResult } from "./provider.js";
+import { estimateTokens, type LlmProvider, type LlmRequest, type LlmResult } from "./provider.js";
 
 const RISKY = /\b(charge|delete|drop|timeout|retry|idempot\w*|auth\w*|token|lock|await|or|not|null)\b/i;
 
@@ -29,13 +29,53 @@ function checkResponse(user: string): CheckResult {
   return { claims };
 }
 
+interface MockMemory { id: string; file: string; lines: [number, number]; decision: string; person: string }
+
+/**
+ * Stands in for the direction check: a memory is "reversed" when the diff removes
+ * any line it covers, and requested when the intent says to reverse something.
+ * Deterministic and line-based, so it proves the wiring only.
+ */
+function directionResponse(user: string): CheckResult {
+  const intent = /<untrusted name="intent">\n([\s\S]*?)\n<\/untrusted>/.exec(user)?.[1] ?? "";
+  const memories: MockMemory[] = JSON.parse(/<untrusted name="memory">\n([\s\S]*?)\n<\/untrusted>/.exec(user)?.[1] ?? "[]");
+  const removed: { file: string; old: number; next: number }[] = [];
+  let file = "";
+  let old = 0;
+  let next = 0;
+  for (const raw of user.split("\n")) {
+    const header = /^diff --git a\/.+ b\/(.+)$/.exec(raw);
+    if (header) { file = header[1] ?? ""; continue; }
+    const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)/.exec(raw);
+    if (hunk) { old = Number(hunk[1]); next = Number(hunk[2]); continue; }
+    if (!file || raw.startsWith("---") || raw.startsWith("+++")) continue;
+    if (raw.startsWith("-")) removed.push({ file, old: old++, next });
+    else if (raw.startsWith("+")) next += 1;
+    else if (raw.startsWith(" ")) { old += 1; next += 1; }
+  }
+  return {
+    claims: memories.flatMap((m) => {
+      const hit = removed.find((r) => r.file === m.file && r.old >= m.lines[0] && r.old <= m.lines[1]);
+      return hit ? [{
+        summary: `You told us ${m.decision} was deliberate; this change reverses it`,
+        origin: /\brevers/i.test(intent) ? "requested" as const : "silent" as const,
+        symbols: [],
+        location: { file: m.file, lines: [Math.max(1, hit.next), Math.max(1, hit.next)] as [number, number] },
+        evidence: `Memory ${m.id}, saved by ${m.person}`,
+      }] : [];
+    }),
+  };
+}
+
 function planResponse(user: string): ExamPlan {
   const claims = JSON.parse(/<untrusted name="claims">\n([\s\S]*?)\n<\/untrusted>/.exec(user)?.[1] ?? "[]");
   return {
     questions: claims.slice(0, 3).map((c: { id: string; summary: string; location: ExamPlan["questions"][number]["location"] }, i: number) => ({
       id: `q${i + 1}`,
       claimId: c.id,
-      ask: `What behaviour changes because of this: ${c.summary}?`,
+      ask: c.id.startsWith("direction-")
+        ? `${c.summary}. Is that the right direction, and why?`
+        : `What behaviour changes because of this: ${c.summary}?`,
       mustMention: ["behaviour"],
       followUpIfVague: "Walk me through what happens at runtime.",
       location: c.location,
@@ -46,7 +86,7 @@ function planResponse(user: string): ExamPlan {
 function gradeResponse(user: string): { grades: Grade[] } {
   const answer = /<untrusted name="answer">\n([\s\S]*?)\n<\/untrusted>/.exec(user)?.[1] ?? "";
   const id = /question_id: (\S+)/.exec(user)?.[1] ?? "q1";
-  const mustMention: string[] = JSON.parse(/must_mention: (\[.*\])/.exec(user)?.[1] ?? "[]");
+  const mustMention: string[] = JSON.parse(/<untrusted name="must_mention">\n([\s\S]*?)\n<\/untrusted>/.exec(user)?.[1] ?? "[]");
   const missing = mustMention.filter((m) => !answer.toLowerCase().includes(m.toLowerCase()));
   const score = mustMention.length ? 1 - missing.length / mustMention.length : 0;
   return { grades: [{ questionId: id, verdict: score >= 0.5 ? "approve" : "reject", score, missing }] };
@@ -57,7 +97,9 @@ export class MockProvider implements LlmProvider {
   readonly id = "mock";
 
   async complete<T>({ name, user, schema }: LlmRequest<T>): Promise<LlmResult<T>> {
-    const body = name.startsWith("check:") ? checkResponse(user) : name === "plan" ? planResponse(user) : gradeResponse(user);
-    return { value: schema.parse(body), inputTokens: Math.ceil(user.length / 4), outputTokens: 50 };
+    const body = name === "check:direction" ? directionResponse(user)
+      : name.startsWith("check:") ? checkResponse(user)
+      : name === "plan" ? planResponse(user) : gradeResponse(user);
+    return { value: schema.parse(body), inputTokens: estimateTokens(user), outputTokens: 50 };
   }
 }

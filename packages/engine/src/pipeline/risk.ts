@@ -16,16 +16,21 @@ export function dedupeClaims(ranked: RankedClaim[]): RankedClaim[] {
   return ranked.reduce<RankedClaim[]>((kept, claim) => (kept.some((k) => overlaps(k, claim)) ? kept : [...kept, claim]), []);
 }
 
+/**
+ * Riskiest first. Pinned claims, which must be examined whatever their score, come
+ * before the rest, so they also win any overlap with an unpinned claim.
+ */
 export function rankClaims(
   claims: Claim[],
   inputsFor: (claim: Claim) => Omit<RiskInputs, "originWeight">,
   config: VivaConfig,
+  pinned: (claim: Claim) => boolean = () => false,
 ): RankedClaim[] {
   const ranked = claims
     .map((claim) => {
       const inputs = { ...inputsFor(claim), originWeight: config.originWeight[claim.origin] };
       return { ...claim, inputs, risk: riskScore(inputs) };
     })
-    .sort((a, b) => b.risk - a.risk);
+    .sort((a, b) => Number(pinned(b)) - Number(pinned(a)) || b.risk - a.risk);
   return dedupeClaims(ranked);
 }

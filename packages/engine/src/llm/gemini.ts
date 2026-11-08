@@ -25,6 +25,8 @@ export class GeminiProvider implements LlmProvider {
     private readonly model: string,
     private readonly fallbackModel?: string,
     private readonly backoffMs = 800,
+    /** Shared-key evals stop on the first 429 instead of retrying/falling back. */
+    private readonly retryRateLimits = true,
   ) {}
 
   /** Capacity errors are common, so retry, then fall back to the second model. */
@@ -42,7 +44,7 @@ export class GeminiProvider implements LlmProvider {
             body,
             signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
           });
-          if (!RETRYABLE.has(last.status)) return last;
+          if (!RETRYABLE.has(last.status) || (last.status === 429 && !this.retryRateLimits)) return last;
         } catch (error) {
           failure = error;
         }
