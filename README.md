@@ -240,3 +240,10 @@ existing frontend fixtures. Mock keyword grading is not evidence of understandin
 | Viva buddy (Rex) | Sophina | `apps/buddy` |
 | Demo, evidence, submission | Pedro | `evals`, `docs` |
 | Shared data shapes | Everyone, via PR | `packages/contracts` |
+
+
+<img width="1440" height="900" alt="Screenshot 2026-11-08 at 11 01 09" src="https://github.com/user-attachments/assets/25a1c372-92ba-49fc-b6ee-fd3ed4161496" />
+
+
+<img width="1440" height="900" alt="Screenshot 2026-11-08 at 11 31 42" src="https://github.com/user-attachments/assets/a9d91e54-57ed-4083-938b-f24a6768f504" />
+
