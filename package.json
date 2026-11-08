@@ -5,9 +5,10 @@
   "packageManager": "pnpm@10.11.0",
   "engines": { "node": ">=22" },
   "scripts": {
-    "dev": "concurrently -n vivad,web -c blue,magenta \"pnpm --filter @viva/vivad dev\" \"pnpm --filter @viva/web dev\"",
+    "dev": "concurrently -n vivad,web,buddy -c blue,magenta,yellow \"pnpm --filter @viva/vivad dev\" \"pnpm --filter @viva/web dev\" \"pnpm --filter @viva/buddy dev\"",
     "dev:api": "pnpm --filter @viva/vivad dev",
     "dev:web": "pnpm --filter @viva/web dev",
+    "dev:buddy": "pnpm --filter @viva/buddy dev",
     "test": "vitest run",
     "typecheck": "pnpm -r typecheck && tsc -p evals/tsconfig.json",
     "evals": "tsx evals/run.ts",

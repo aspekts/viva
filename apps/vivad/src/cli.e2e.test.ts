@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,8 +16,9 @@ const exec = promisify(execFile);
 const cli = fileURLToPath(new URL("./cli.ts", import.meta.url));
 
 /** Real git hook + HTTP daemon + bare remote. No live model or browser. */
-it("blocks a nonterminal push quickly, reuses a passed exam across restart, and fails open with daemon down", async () => {
-  const { repo, base, head } = fixtureRepo({ "pay.ts": "export const pay = 1;\n" }, { "pay.ts": "export const pay = () => charge();\n" });
+it.each([false, true])("blocks a nonterminal push, reuses a pass across restart, and fails open with daemon down (legacy hook: %s)", async (legacy) => {
+  // A foreign repo's package manager must not control Viva's launcher.
+  const { repo, base, head } = fixtureRepo({ "package.json": '{"packageManager":"pnpm@0.0.0"}', "pay.ts": "export const pay = 1;\n" }, { "pay.ts": "export const pay = () => charge();\n" });
   const remote = mkdtempSync(join(tmpdir(), "viva-remote-"));
   let server = serve({ fetch: createApp(new MockProvider()).fetch, port: 0, hostname: "127.0.0.1" });
   await new Promise<void>((resolve) => server.once("listening", resolve));
@@ -32,7 +33,16 @@ it("blocks a nonterminal push quickly, reuses a passed exam across restart, and 
     await git("remote", "add", "origin", remote);
     await git("push", "-q", "origin", `${base}:refs/heads/main`);
     await git("branch", "--set-upstream-to=origin/main");
+    const hook = join(repo, ".git", "hooks", "pre-push");
+    if (legacy) {
+      const root = fileURLToPath(new URL("../../../", import.meta.url)).replaceAll("\\", "/").replace(/\/$/, "");
+      writeFileSync(hook, `#!/bin/sh\n# existing hook\n\n# viva gate\nVIVA_REPO="$(pwd)" pnpm --silent --dir "${root}" viva gate || exit $?\n`);
+    }
     await exec(process.execPath, ["--import", "tsx", cli, "hook", "install"], { env, timeout: 10_000 });
+    const installed = readFileSync(hook, "utf8");
+    await exec(process.execPath, ["--import", "tsx", cli, "hook", "install"], { env, timeout: 10_000 });
+    expect(readFileSync(hook, "utf8")).toBe(installed);
+    if (legacy) expect(installed).toContain("# existing hook");
 
     const started = Date.now();
     const blocked = await git("push").catch((error: { code: number; stderr: string }) => error);
