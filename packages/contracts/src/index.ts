@@ -147,6 +147,48 @@ export const Review = z.object({
 });
 export type Review = z.infer<typeof Review>;
 
+/** Local retry receipt: no questions, model prose, diffs or answers on disk. */
+export const ReviewDecision = z.object({
+  key: z.string().regex(/^[a-f0-9]{64}$/),
+  reviewId: z.string().uuid(),
+  gate: Gate,
+  finishedAt: z.string(),
+  /** Raised when older receipts can't be trusted. Missing on receipts written before policy 2. */
+  policy: z.number().int().positive().optional(),
+});
+export type ReviewDecision = z.infer<typeof ReviewDecision>;
+
+/** On-demand feedback stays in the review; it never enters the ledger. */
+export const ReviewFeedback = z.object({
+  reviewId: z.string(),
+  gate: Gate,
+  items: z.array(z.object({
+    questionId: z.string(),
+    location: CodeLocation,
+    ask: z.string(),
+    missing: z.array(z.string()),
+  })),
+});
+export type ReviewFeedback = z.infer<typeof ReviewFeedback>;
+
+/** Source for one location, read from the review's head commit. Never logged or stored. */
+export const ReviewCode = z.object({
+  reviewId: z.string(),
+  file: z.string(),
+  commit: z.string(),
+  /** Lines in the whole file, not in this response. */
+  totalLines: z.number().int().nonnegative(),
+  lines: z.array(z.object({
+    number: z.number().int().positive(),
+    text: z.string(),
+    /** True for the lines asked about, false for the context around them. */
+    focus: z.boolean(),
+  })),
+  /** True when the location was too long and the end was cut off. */
+  truncated: z.boolean(),
+});
+export type ReviewCode = z.infer<typeof ReviewCode>;
+
 /**
  * One line of the ledger. Mirrors Mabel's data boundary: scores and hashes
  * leave the review, while diffs, transcripts and model output do not.
@@ -162,6 +204,38 @@ export const Attestation = z.object({
 });
 export type Attestation = z.infer<typeof Attestation>;
 
+/**
+ * A passed answer the developer chose to keep as project memory, so a later
+ * agent can find out why the code is the way it is. It lives in committed
+ * markdown under `.viva/memory/`, never in the ledger, and is saved only on request.
+ */
+export const MemoryEntry = z.object({
+  id: z.string(),
+  reviewId: z.string(),
+  questionId: z.string(),
+  location: CodeLocation,
+  symbols: z.array(z.string()),
+  /** The decision the question was about. */
+  claim: z.string(),
+  question: z.string(),
+  /** The developer's own words, as answered in the exam. */
+  explanation: z.string(),
+  person: z.string(),
+  at: z.string(),
+  /** The commit the explanation was given against. */
+  commit: z.string(),
+});
+export type MemoryEntry = z.infer<typeof MemoryEntry>;
+
+/** What a save wrote, so the developer sees exactly what is stored and where. */
+export const SavedMemory = z.object({
+  reviewId: z.string(),
+  /** Repo-relative memory files, with forward slashes on every OS. */
+  files: z.array(z.string()),
+  entries: z.array(MemoryEntry),
+});
+export type SavedMemory = z.infer<typeof SavedMemory>;
+
 export const FogNode = z.object({
   id: z.string(),
   file: z.string(),
@@ -175,8 +249,17 @@ export const FogNode = z.object({
 export type FogNode = z.infer<typeof FogNode>;
 
 export const FogMap = z.object({
+  /** The repo mapped, or null when the daemon doesn't know one yet. Nodes are then empty. */
+  repoPath: z.string().nullable(),
   generatedAt: z.string(),
   debt: z.number().nonnegative(),
   nodes: z.array(FogNode),
 });
 export type FogMap = z.infer<typeof FogMap>;
+
+/** A signal to refetch over SSE, so no code, transcript or fog data travels in it. */
+export const VivaEvent = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("review"), reviewId: z.string(), stage: ReviewStage, gate: Gate.nullable() }),
+  z.object({ type: z.literal("fog"), repoPath: z.string() }),
+]);
+export type VivaEvent = z.infer<typeof VivaEvent>;

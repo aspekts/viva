@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FogMap, FogNode } from "@viva/contracts";
-import { getFog } from "../api/client";
+import { getFog, watch } from "../api/client";
 import { layoutTreemap, type Rect } from "./treemap";
 
 /** The map is laid out in a 16:9 box, then drawn in percentages so it scales to any screen. */
@@ -55,7 +55,9 @@ export function FogView() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    getFog().then(setMap, (e: Error) => setError(e.message));
+    const load = () => getFog().then((loaded) => { setMap(loaded); setError(null); }, (e: Error) => setError(e.message));
+    load();
+    return watch("fog", load);
   }, []);
 
   const tiles = useMemo(
@@ -77,6 +79,7 @@ export function FogView() {
       </p>
     );
   if (!map) return <p>Loading the map…</p>;
+  if (!map.repoPath) return <p>No repo to map yet. Push from a repo with the Viva hook installed, and it appears here.</p>;
 
   return (
     <section>
