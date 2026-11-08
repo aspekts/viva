@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Claim } from "@viva/contracts";
 import { GeminiProvider, loadChecks, type LlmProvider } from "@viva/engine";
 import { fileURLToPath } from "node:url";
-import { cases, checkNames, holdoutIds, type EvalCase } from "./cases/index.js";
+import { cases, checkNames, holdoutIds, realIds, type EvalCase } from "./cases/index.js";
 import { runExamEval, summarizeExam } from "./exam.js";
 import { gradeClaims, hash, matchesClaim, report, runMatrix, safeError, summarize } from "./matrix.js";
 import { main, RATE_LIMITED_EXIT } from "./run.js";
@@ -53,6 +53,18 @@ describe("fixed claim grading", () => {
     expect(held.some((c) => !c.expected && !c.requested)).toBe(true);
   });
 
+  it("keeps the real agent changes out of tune and holdout, and each one a real diff", () => {
+    const real = cases.filter((c) => realIds.includes(c.id));
+    expect(real).toHaveLength(10);
+    expect(real.filter((c) => c.expected)).toHaveLength(6);
+    expect(real.some((c) => holdoutIds.includes(c.id))).toBe(false);
+    for (const c of real) {
+      expect(Object.keys(c.after).length).toBeGreaterThan(0);
+      expect(JSON.stringify(c.before)).not.toBe(JSON.stringify(c.after));
+      if (c.expected) expect(c.after[c.expected.file]).toBeDefined();
+    }
+  });
+
   it("requires the actual seeded claim, not just an exam or unrelated finding", () => {
     expect(gradeClaims(bug, "behaviour-change", [finding])).toBe("HIT");
     expect(gradeClaims(bug, "behaviour-change", [{ ...finding, summary: "Renames the accumulator", evidence: "Renamed local" }])).toBe("MISS");
@@ -74,8 +86,8 @@ describe("fixed claim grading", () => {
     expect(gradeClaims(bug, "failure-path", [finding])).toBe("EXTRA");
   });
   it("covers all bug categories, four model-tested clean refactors, and docs", () => {
-    expect(cases.filter((c) => c.expected)).toHaveLength(16);
-    expect(cases.filter((c) => !c.expected && !c.gate && !c.requested)).toHaveLength(7);
+    expect(cases.filter((c) => c.expected)).toHaveLength(16 + 6);
+    expect(cases.filter((c) => !c.expected && !c.gate && !c.requested)).toHaveLength(7 + 4);
     expect(cases.filter((c) => !c.expected && c.requested)).toHaveLength(4);
     expect(cases.filter((c) => c.gate)).toHaveLength(1);
     expect(new Set(cases.map((c) => c.id)).size).toBe(cases.length);
@@ -85,6 +97,8 @@ describe("fixed claim grading", () => {
     expect(hash(/first/)).not.toBe(hash(/second/));
   });
 });
+
+const docsOnly = cases.find((c) => c.gate === "docs-only")!;
 
 const checks = () => loadChecks(fileURLToPath(new URL("../checks", import.meta.url)));
 
@@ -119,11 +133,11 @@ describe("matrix runner", () => {
       id: "protected", intent: "update config", expected: null,
       before: { ".viva/config.json": "{}\n" }, after: { ".viva/config.json": '{"riskThreshold":99}\n' },
     };
-    const matrix = await runMatrix([cases.at(-1)!, protectedCase], await checks(), { id: "test", complete }, "test");
+    const matrix = await runMatrix([docsOnly, protectedCase], await checks(), { id: "test", complete }, "test");
     expect(complete).not.toHaveBeenCalled();
     expect(matrix.rows.map((r) => r.gate)).toEqual(["docs-only", "viva-config-changed"]);
     expect(matrix.rows[0]!.cells.every((c) => c.status === "GATE")).toBe(true);
-    expect(summarize(matrix, [cases.at(-1)!, protectedCase]).complete).toBe(false);
+    expect(summarize(matrix, [docsOnly, protectedCase]).complete).toBe(false);
   });
   it("stops every remaining cell on 429 and does not miscount unmeasured clean cases", async () => {
     const complete = vi.fn().mockRejectedValue(new Error("Gemini returned 429: PRIVATE BODY"));
@@ -142,8 +156,8 @@ describe("matrix runner", () => {
         return { value: request.schema.parse({ claims: [finding] }), inputTokens: 1, outputTokens: 1 };
       },
     };
-    const matrix = await runMatrix([bug, clean, cases.at(-1)!], await checks(), provider, "test");
-    expect(summarize(matrix, [bug, clean, cases.at(-1)!])).toMatchObject({ recall: "1/1 (100.0%)", falsePositiveRate: "1/1 (100.0%)" });
+    const matrix = await runMatrix([bug, clean, docsOnly], await checks(), provider, "test");
+    expect(summarize(matrix, [bug, clean, docsOnly])).toMatchObject({ recall: "1/1 (100.0%)", falsePositiveRate: "1/1 (100.0%)" });
     expect(checkNames).toHaveLength(3);
   });
 });

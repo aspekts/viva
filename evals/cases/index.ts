@@ -1,4 +1,5 @@
 import type { FileMap } from "@viva/engine";
+import { realCases, realIds } from "./real.js";
 
 export const checkNames = ["behaviour-change", "failure-path", "silent-decision"] as const;
 export type CheckName = (typeof checkNames)[number];
@@ -477,7 +478,12 @@ export const holdoutIds: readonly string[] = [
   "21-requested-status", "23-mixed-login-lockout", "25-subtle-falsy-fallback", "28-clean-rename-param",
 ];
 
+export { realIds };
+
 // A real package manifest accompanies the dependency fixture. No install occurs.
 const dependency = cases.find((c) => c.id === "10-silent-dependency")!;
 dependency.before["package.json"] = '{"private":true,"dependencies":{}}\n';
 dependency.after["package.json"] = '{"private":true,"dependencies":{"uuid":"11.1.0"}}\n';
+
+// Real agent changes from the team's own history. They never join the tune or holdout splits.
+cases.push(...realCases);
