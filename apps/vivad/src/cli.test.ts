@@ -52,6 +52,27 @@ describe("CLI gate", () => {
     expect(open).toHaveBeenCalledWith(expect.stringContaining(`review=${pending.id}`), { wait: false });
   });
 
+  it("opens the AnimePix buddy site, and still prints the exam room, for a high-risk push", async () => {
+    vi.mocked(pushContext).mockReturnValue({ terminal: false, openBrowser: true });
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(await presentReview(pending, client)).toBe(1);
+    expect(open).toHaveBeenCalledWith(`http://localhost:5174/?review=${pending.id}`, { wait: false });
+    expect(error).toHaveBeenCalledWith(expect.stringContaining(`http://localhost:5173/?review=${pending.id}`));
+  });
+
+  it("pops the buddy up with the verdict for a blocked push from an IDE, but not in a terminal", async () => {
+    const blocked = { ...pending, stage: "done" as const, gate: { verdict: "reject" as const, reason: "exam-failed" as const, skippable: true } };
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.mocked(pushContext).mockReturnValue({ terminal: false, openBrowser: true });
+    expect(await presentReview(blocked, client)).toBe(1);
+    expect(open).toHaveBeenCalledWith(`http://localhost:5174/?review=${pending.id}`, { wait: false });
+    vi.mocked(open).mockClear();
+    vi.mocked(pushContext).mockReturnValue({ terminal: true, openBrowser: true });
+    expect(await presentReview(blocked, client)).toBe(1);
+    expect(open).not.toHaveBeenCalled();
+  });
+
   it("uses the controlling terminal and returns its verdict", async () => {
     vi.mocked(pushContext).mockReturnValue({ terminal: true, openBrowser: false });
     const input = {} as NonNullable<ReturnType<typeof controllingTerminal>>;

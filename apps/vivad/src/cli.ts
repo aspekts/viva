@@ -12,6 +12,13 @@ import { formatMemory, formatSaved, repoRelative } from "./memory.js";
 import { controllingTerminal, pushContext } from "./terminal.js";
 
 const WEB = process.env.VIVA_WEB ?? "http://localhost:5173";
+/** The AnimePix buddy site, opened for high-risk pushes. VIVA_BUDDY=off opens the exam room instead. */
+const BUDDY = process.env.VIVA_BUDDY === "off" ? null : (process.env.VIVA_BUDDY ?? "http://localhost:5174");
+const reviewLink = (site: string, id: string) => `${site}/?review=${encodeURIComponent(id)}`;
+
+async function openInBrowser(link: string): Promise<void> {
+  try { await open(link, { wait: false }); } catch { /* The printed link remains usable. */ }
+}
 const MARKER = "# viva gate";
 
 const VIVA_ROOT = resolve(fileURLToPath(new URL("../../..", import.meta.url))).replaceAll("\\", "/");
@@ -53,11 +60,10 @@ export async function presentReview(review: Review, client: DaemonClient): Promi
       }
       review = completed;
     } else {
-      const link = `${WEB}/?review=${encodeURIComponent(review.id)}`;
+      const link = reviewLink(BUDDY ?? WEB, review.id);
       console.error(`viva: exam required; push blocked. Complete ${link} or run pnpm viva exam ${review.id} in a terminal, then git push again.`);
-      if (context.openBrowser) {
-        try { await open(link, { wait: false }); } catch { /* The printed link remains usable. */ }
-      }
+      if (BUDDY) console.error(`viva: the full exam room, with the code, is at ${reviewLink(WEB, review.id)}`);
+      if (context.openBrowser) await openInBrowser(link);
       return 1;
     }
   }
@@ -68,6 +74,11 @@ export async function presentReview(review: Review, client: DaemonClient): Promi
   console.log(`viva: ${review.gate.verdict} (${review.gate.reason})`);
   if (!allowsPush(review.gate)) {
     console.error(`viva: push blocked. Run pnpm viva feedback ${review.id} for missed concepts.${review.gate.skippable ? ` Run pnpm viva exam ${review.id} to review the verdict or skip with debt.` : " Hard gate: resolve the flagged change; this cannot be skipped."}`);
+    // A blocked push from an IDE or GUI has nowhere to show the verdict, so the buddy pops up with it.
+    // It must never throw: gate() fails open on unexpected errors, which would let this blocked push through.
+    try {
+      if (BUDDY && context && !context.terminal && context.openBrowser) await openInBrowser(reviewLink(BUDDY, review.id));
+    } catch { /* The printed instructions remain. */ }
   }
   return allowsPush(review.gate) ? 0 : 1;
 }

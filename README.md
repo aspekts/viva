@@ -17,6 +17,7 @@ pnpm dev
 ```
 
 - **Web UI:** http://localhost:5173
+- **AnimePix buddy:** http://localhost:5174, the separate site a high-risk push opens. Try it with no daemon at http://localhost:5174/?mock (add `&failed` or `&hard`)
 - **Daemon:** http://127.0.0.1:4317/v1/health
 - **Frontend only:** run `pnpm dev:web` and open http://localhost:5173/?mock to use sample data with no daemon.
 
@@ -31,9 +32,11 @@ VIVA_REPO=/path/to/some/repo pnpm viva hook install
 Commit a change in that repo and `git push`:
 
 - **Terminal:** risky changes open an Ink exam in place. Type an answer to each question, press Enter to submit, and read the verdict. Esc offers an explicit **skip with debt**; hard gates cannot be skipped. Ctrl-C leaves the exam unfinished and blocks the push.
-- **IDE / coding agent / CI:** the hook prints an exam link and exits non-zero immediately after review creation, without polling for a person. On a local desktop it also opens the browser; known agent and CI environments never launch one. Set `VIVA_NONINTERACTIVE=1` for tools without a recognized agent marker. Complete the browser exam or run `pnpm viva exam <reviewId>` in a terminal, then retry `git push`.
+- **IDE / coding agent / CI:** the hook prints a link to the AnimePix buddy site, where your chosen character pops up with the risk, the flagged decisions and the questions, and also prints the exam room link and exits non-zero immediately after review creation, without polling for a person. On a local desktop it also opens the buddy in the browser, and does so for a blocked push too, to show the verdict; known agent and CI environments never launch one. Set `VIVA_NONINTERACTIVE=1` for tools without a recognized agent marker. Complete the browser exam or run `pnpm viva exam <reviewId>` in a terminal, then retry `git push`.
 - **Retry:** the same repository, commit range and developer reuse the completed decision, including after a daemon restart. A failed exam still blocks. Skipping is an explicit debt decision, not a pass or a mastery attestation.
 - **Daemon down / infrastructure crash:** the hook warns and allows the push, as before.
+
+Set `VIVA_BUDDY=off` to open the exam room instead, or `VIVA_BUDDY=<url>` to point elsewhere.
 
 Run the commands below from this Viva checkout. Set `VIVA_REPO` to the target repo when handing feedback to an agent so it runs there.
 
@@ -135,5 +138,6 @@ existing frontend fixtures. Mock keyword grading is not evidence of understandin
 | Backend, engine, Entire | Marcus | `packages/engine`, `apps/vivad` |
 | The Fog | Kay | `apps/web/src/fog` |
 | Exam room and voice | Sophina | `apps/web/src/exam` |
+| AnimePix buddy | Sophina | `apps/buddy` |
 | Demo, evidence, submission | Pedro | `evals`, `docs` |
 | Shared data shapes | Everyone, via PR | `packages/contracts` |

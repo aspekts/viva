@@ -33,6 +33,8 @@ The Vite dev server proxies `/v1` to the daemon on `127.0.0.1:4317`, so always c
 
 `git push` prints `/?review=<id>` when a viva is needed, so that link must always open the exam directly.
 
+**AnimePix buddy (`apps/buddy`, http://localhost:5174):** a separate site the hook opens instead of the exam room for a push that needs a viva, or one that is blocked, when there's no terminal. It takes the same `/?review=<id>` (and `?mock`, `&failed`, `&hard`), uses the same endpoints and gate copy, and links back to the exam room for the code. `VIVA_BUDDY=off` turns it off.
+
 ## Review lifecycle
 
 ```
