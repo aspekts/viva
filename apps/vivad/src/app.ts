@@ -1,7 +1,7 @@
 import { realpath } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Answer, FogMap, ReviewCode, ReviewFeedback, ReviewRequest, SavedMemory, VivaEvent, type Review } from "@viva/contracts";
+import { Answer, FogMap, VoiceSession, ReviewCode, ReviewFeedback, ReviewRequest, SavedMemory, VivaEvent, type Review } from "@viva/contracts";
 import {
   allowsPush,
   appendAttestations,
@@ -30,6 +30,7 @@ import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import { decisionIdentity, readDecision, writeDecision } from "./decisions.js";
+import { signVoiceSession, VoiceUnavailableError } from "./voice.js";
 
 export function createProvider(env: NodeJS.ProcessEnv = process.env): LlmProvider {
   if (env.VIVA_LLM === "gemini") {
@@ -66,7 +67,7 @@ const CodeQuery = z.object({
  * The daemon only tracks reviews and serves the UI. Reviews stay on this
  * machine, and only attestations leave it, inside git notes.
  */
-export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 2000, ledgerSync = syncLedger, now = Date.now } = {}) {
+export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 2000, ledgerSync = syncLedger, now = Date.now, voice = () => signVoiceSession() } = {}) {
   const refreshes = new Map<string, { at: number; pending: boolean }>();
   const refreshLedger = (repo: string) => {
     // Canonical common-dir keys also throttle aliases and linked worktrees.
@@ -113,6 +114,17 @@ export function createApp(llm: LlmProvider = createProvider(), { fogPollMs = 200
   }
 
   app.get("/v1/health", (c) => c.json({ ok: true, llm: llm.id }));
+
+  /** A one-off signed URL for the ElevenLabs examiner. Audio goes browser to ElevenLabs, never through here. */
+  app.get("/v1/voice/session", async (c) => {
+    try {
+      return c.json(VoiceSession.parse(await voice()));
+    } catch (error) {
+      if (error instanceof VoiceUnavailableError) return c.json({ error: error.message }, 503);
+      console.error("vivad: voice session failed", error instanceof Error ? error.message : error);
+      return c.json({ error: "could not start a voice session" }, 502);
+    }
+  });
 
   app.post("/v1/reviews", async (c) => {
     const { request, key, dir } = await decisionIdentity(ReviewRequest.parse(await c.req.json()));

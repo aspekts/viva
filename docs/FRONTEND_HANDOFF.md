@@ -24,6 +24,7 @@ G-Research said hackathons come down to the demo and presentation, and the UI is
 
 | Moment | What the judges see | Owner |
 |---|---|---|
+| Sun 09:50 | Voice exam ([#22](https://github.com/aspekts/viva/issues/22)): `VoiceExam` in the exam room, `getVoiceSession()` in `client.ts`, and `GET /v1/voice/session` on the daemon. Speech fills the answer boxes. Without ElevenLabs keys in `.env`, the button explains it and typing still works |
 | **Fog rolls in** | An agent writes code, and part of the map disappears under fog | Kay |
 | **The viva** | A judge is questioned out loud about a change, while the code highlights | Sophina |
 | **Fog clears** | They pass, and the map lifts in the team's colours | Both |

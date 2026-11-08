@@ -263,3 +263,8 @@ export const VivaEvent = z.discriminatedUnion("type", [
   z.object({ type: z.literal("fog"), repoPath: z.string() }),
 ]);
 export type VivaEvent = z.infer<typeof VivaEvent>;
+
+/** GET /v1/voice/session: a short-lived ElevenLabs URL. 503 when voice isn't configured. */
+export const VoiceSession = z.object({ signedUrl: z.string().url() });
+export type VoiceSession = z.infer<typeof VoiceSession>;
+
