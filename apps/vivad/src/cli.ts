@@ -166,6 +166,11 @@ function installHook(): number {
 export async function main(args = process.argv.slice(2)): Promise<number> {
   const [command, sub, flag, agent] = args;
   if (command === "gate") return gate();
+  if (command === "acp") {
+    const { serveAcp } = await import("./acp.js");
+    await serveAcp();
+    return 0;
+  }
   if (command === "hook" && sub === "install") return installHook();
   if (command === "ledger" && sub === "sync") {
     const synced = await syncLedger(REPO);
@@ -193,7 +198,7 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
     console.log(formatMemory(file, await readMemory(root, file)));
     return 0;
   }
-  console.log("usage: viva gate | viva hook install | viva ledger sync | viva exam <reviewId> | viva feedback <reviewId> [--agent claude|codex] | viva remember <reviewId> | viva memory <file>");
+  console.log("usage: viva gate | viva acp | viva hook install | viva ledger sync | viva exam <reviewId> | viva feedback <reviewId> [--agent claude|codex] | viva remember <reviewId> | viva memory <file>");
   return command ? 1 : 0;
 }
 
