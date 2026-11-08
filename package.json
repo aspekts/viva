@@ -13,6 +13,7 @@
     "evals": "tsx evals/run.ts",
     "evals:live": "tsx evals/run.ts --live",
     "viva": "tsx apps/vivad/src/cli.ts",
+    "demo": "tsx demo/setup.ts",
     "check": "pnpm typecheck && pnpm test && pnpm evals"
   },
   "devDependencies": {

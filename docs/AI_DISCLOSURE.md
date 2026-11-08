@@ -8,3 +8,4 @@ HackTheBurgh requires us to disclose AI use and explain what it did. Keep this c
 - **Gate results (#13):** the gate-reason copy table, result screen, skip flow and failed-review fixture were written with Claude Code, then driven in headless Chrome (failed, hard gate, passed).
 - **Fog map (#10):** the treemap layout and map view were written with Claude Code, then run and checked in a browser at projector size. A global formatter hook reformatted the whole repo during the session, so those changes were reverted and only the files for this issue are committed.
 - **Visual identity (#11):** three directions were drafted with Claude Code and the team chose "An oral exam, marked in red pen". The tokens and styles were then written with Claude Code and checked in headless Chrome.
+- **Demo repo (#14):** `demo/setup.ts` and the commit-message intent fallback were written with Claude Code, then pushed against live Gemini to check both the pass and the fail path.

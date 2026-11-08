@@ -31,6 +31,15 @@ function pushBase(): string {
   return "HEAD~1";
 }
 
+/** With no agent session, the pushed commit messages are the closest thing to a stated intent. */
+function commitIntent(base: string): string | undefined {
+  try {
+    return git("log", "--format=%B", `${base}..HEAD`).trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function presentReview(review: Review, client: DaemonClient): Promise<number> {
   const context = pushContext(process.env, !!(process.stderr.isTTY || process.stdout.isTTY));
   if (review.stage === "awaiting-exam") {
@@ -66,11 +75,13 @@ export async function presentReview(review: Review, client: DaemonClient): Promi
 export async function gate(client = new DaemonClient()): Promise<number> {
   let review: Review;
   try {
+    const base = pushBase();
     const request = {
       repoPath: git("rev-parse", "--show-toplevel"),
-      base: pushBase(),
+      base,
       head: git("rev-parse", "HEAD"),
       person: git("config", "user.name"),
+      intent: commitIntent(base),
     };
 
     review = await client.start(request);
