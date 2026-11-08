@@ -38,7 +38,7 @@ const FogTile = ({ node, rect }: FogTileProps) => (
         top: percent((rect.y / MAP.h) * 100),
         width: percent(rect.w),
         height: percent((rect.h / MAP.h) * 100),
-        "--fog": node.fog,
+        "--fog-level": node.fog,
       } as React.CSSProperties
     }
   >

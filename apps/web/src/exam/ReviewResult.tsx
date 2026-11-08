@@ -18,9 +18,10 @@ export const ReviewResult = ({ review, skipping, skipError, onSkip }: ReviewResu
   if (!gate) return null;
   const { allowed, canSkip, title, detail } = describeGate(gate);
   return (
-    <section>
-      <h1 ref={heading} tabIndex={-1}>{allowed ? "Push allowed" : "Push blocked"}</h1>
-      <h2>{title}</h2>
+    <section className={allowed ? "result" : "result result-blocked"}>
+      <h1 ref={heading} tabIndex={-1}>
+        <span className="result-badge">{allowed ? "Push allowed" : "Push blocked"}</span> {title}
+      </h1>
       <p>{detail}</p>
       {review.grades.map((grade) => {
         const question = review.plan?.questions.find((q) => q.id === grade.questionId);
@@ -31,7 +32,7 @@ export const ReviewResult = ({ review, skipping, skipError, onSkip }: ReviewResu
               {grade.verdict}, {Math.round(grade.score * 100)}%
             </small>
             {grade.missing.length > 0 && (
-              <ul aria-label="Points you missed">
+              <ul className="missed" aria-label="Points you missed">
                 {grade.missing.map((point) => (
                   <li key={point}>{point}</li>
                 ))}
