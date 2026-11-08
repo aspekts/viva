@@ -1,42 +1,11 @@
 import { useEffect, useState } from "react";
 import type { Review } from "@viva/contracts";
-import { reviewLoader, submitAnswers, watch } from "../api/client";
+import { reviewLoader, skipReview, submitAnswers, watch } from "../api/client";
 import { buildAnswers, countUnanswered, type Drafts } from "./answers";
+import { skipErrorMessage } from "./gate";
 import { loadErrorMessage, submitErrorMessage } from "./messages";
 import { QuestionCode } from "./QuestionCode";
-import { pushAllowed } from "./verdict";
-
-const ReviewResult = ({ review }: { review: Review }) => {
-  const gate = review.gate;
-  if (!gate) return null;
-  const allowed = pushAllowed(gate);
-  return (
-    <section>
-      <h1>{allowed ? "Push allowed" : "Push blocked"}</h1>
-      <p>
-        Verdict: {gate.verdict} ({gate.reason})
-      </p>
-      {review.grades.map((grade) => {
-        const question = review.plan?.questions.find((q) => q.id === grade.questionId);
-        return (
-          <article key={grade.questionId} className="question">
-            <span>{question?.ask ?? grade.questionId}</span>
-            <small>
-              {grade.verdict}, {Math.round(grade.score * 100)}%
-            </small>
-            {grade.missing.length > 0 && (
-              <ul aria-label="Points you missed">
-                {grade.missing.map((point) => (
-                  <li key={point}>{point}</li>
-                ))}
-              </ul>
-            )}
-          </article>
-        );
-      })}
-    </section>
-  );
-};
+import { ReviewResult } from "./ReviewResult";
 
 /** Typed exam first. Sophina adds the ElevenLabs voice session behind the same answers. */
 export function ExamRoom({ reviewId }: { reviewId: string | null }) {
@@ -46,6 +15,8 @@ export function ExamRoom({ reviewId }: { reviewId: string | null }) {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [empty, setEmpty] = useState(false);
+  const [skipping, setSkipping] = useState(false);
+  const [skipError, setSkipError] = useState<string | null>(null);
 
   useEffect(() => {
     const loader = reviewLoader(
@@ -68,7 +39,19 @@ export function ExamRoom({ reviewId }: { reviewId: string | null }) {
   if (loadError) return <p role="alert">{loadError}</p>;
   if (empty) return <p>No reviews yet. Run git push in a repo with the Viva hook, and your exam appears here.</p>;
   if (!review) return <p role="status">Loading the exam…</p>;
-  if (review.gate) return <ReviewResult review={review} />;
+  const skip = async () => {
+    setSkipping(true);
+    setSkipError(null);
+    try {
+      setReview(await skipReview(review.id));
+    } catch (e: unknown) {
+      setSkipError(skipErrorMessage(e));
+    } finally {
+      setSkipping(false);
+    }
+  };
+
+  if (review.gate) return <ReviewResult review={review} skipping={skipping} skipError={skipError} onSkip={skip} />;
 
   const questions = review.plan?.questions ?? [];
   if (questions.length === 0) return <p>This review has no questions to answer.</p>;
