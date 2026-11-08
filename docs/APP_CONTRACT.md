@@ -228,7 +228,7 @@ Adding `?mock` loads `fixtures/mock/fog.json`, `fixtures/mock/review.json` and, 
 
 With no `review` in the URL the exam room opens the newest review, or shows an empty state, and only `?mock` gives sample data. In mock mode, submitting blank answers returns a failed review with the missed rubric points, and answered questions return a pass.
 
-With PR #37, `?mock&empty` loads `fixtures/mock/fog-empty.json` and, with PR #38, an empty Exam room. With PR #39, `?mock&hard` loads `fixtures/mock/review-hard-gate.json`, a review blocked by a hard gate, where skip is refused. To test another state, add a fixture, for example `review-failed.json`, and keep it valid against the schema.
+With PR #37, `?mock&empty` loads `fixtures/mock/fog-empty.json` and, with PR #38, an empty Exam room. With PR #39, `?mock&hard` loads `fixtures/mock/review-hard-gate.json`, a review blocked by a hard gate, where skip is refused. `?mock&failed` loads `fixtures/mock/review-failed.json`, a failed exam where skip is allowed. To test another state, add a fixture and keep it valid against the schema.
 
 ## Gaps to agree
 
@@ -240,5 +240,5 @@ Marcus to confirm. Until these land, build the UI against the proposed shape beh
 | **Live progress:** no updates during a review or while fog changes | Fog rolling in live, loading screens | 🔜 PR #35 for fog and review changes. Progress during a review is still open |
 | **Latest review:** the Exam room tab has no ID without the URL | Opening the tab directly | 🔜 PR #38: `getLatestReview()`, the first item from `GET /v1/reviews` |
 | **Which repo:** the UI doesn't know the repo for the Fog | Live Fog | 🔜 PR #37: the daemon remembers the last pushed repo, in memory |
-| **Skip:** not in `client.ts`, and the reason isn't recorded in the ledger | Skip button | 🔜 PR #39 adds `skipReview(id)`. The ledger still doesn't record skips, by design, as the fog stays |
+| **Skip:** not in `client.ts`, and the reason isn't recorded in the ledger | Skip button | ✅ `skipReview(id)` is in `client.ts` and the button shows for a skippable gate. The ledger still doesn't record skips, by design, as the fog stays |
 | **Debt over time:** only the current total exists | A trend chart | 📝 Stretch, with Tiger Data |
