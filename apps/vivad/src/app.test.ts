@@ -11,6 +11,7 @@ import * as engine from "@viva/engine";
 import * as decisions from "./decisions.js";
 import { createApp, createProvider } from "./app.js";
 import { decisionIdentity } from "./decisions.js";
+import { signVoiceSession } from "./voice.js";
 
 const repos: string[] = [];
 // Retries without blocking, as Windows locks a repo while a fog check's git process runs in it.
@@ -698,4 +699,16 @@ it("never awaits refresh on review, Fog or exam submission, and throttles each r
     await app.request(`/v1/fog?repo=${encodeURIComponent(review.request.repoPath)}`);
     await vi.waitFor(() => expect(ledgerSync).toHaveBeenCalledTimes(5));
   } finally { finish(false); }
+});
+
+describe("voice session", () => {
+  it("returns a signed URL, 503 when voice isn't configured, and 502 when ElevenLabs fails", async () => {
+    const ok = createApp(new MockProvider(), { voice: async () => ({ signedUrl: "wss://api.elevenlabs.io/v1/convai/conversation?token=t" }) });
+    expect(await (await ok.request("/v1/voice/session")).json()).toEqual({ signedUrl: "wss://api.elevenlabs.io/v1/convai/conversation?token=t" });
+    const off = createApp(new MockProvider(), { voice: () => signVoiceSession({}) });
+    expect((await off.request("/v1/voice/session")).status).toBe(503);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const down = createApp(new MockProvider(), { voice: async () => { throw new Error("ElevenLabs returned 500"); } });
+    expect((await down.request("/v1/voice/session")).status).toBe(502);
+  });
 });

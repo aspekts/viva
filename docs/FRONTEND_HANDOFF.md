@@ -12,7 +12,7 @@ pnpm install
 pnpm dev:web
 ```
 
-Open http://localhost:5173/?mock. Everything works on sample data, so you don't need the backend, an API key, or Marcus.
+Open http://localhost:5173/?mock. Everything works on sample data, so you don't need the backend, an API key, or Marcus. Add `&roll` to watch fog roll in and clear on a 4s loop.
 
 To run the whole thing, copy `.env.example` to `.env` and run `pnpm dev`. That uses a mock model until `VIVA_LLM` is set to `gemini`.
 
@@ -24,6 +24,7 @@ G-Research said hackathons come down to the demo and presentation, and the UI is
 
 | Moment | What the judges see | Owner |
 |---|---|---|
+| Sun 09:50 | Voice exam ([#22](https://github.com/aspekts/viva/issues/22)): `VoiceExam` in the exam room, `getVoiceSession()` in `client.ts`, and `GET /v1/voice/session` on the daemon. Speech fills the answer boxes. Without ElevenLabs keys in `.env`, the button explains it and typing still works |
 | **Fog rolls in** | An agent writes code, and part of the map disappears under fog | Kay |
 | **The viva** | A judge is questioned out loud about a change, while the code highlights | Sophina |
 | **Fog clears** | They pass, and the map lifts in the team's colours | Both |

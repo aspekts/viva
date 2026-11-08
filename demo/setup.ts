@@ -147,6 +147,14 @@ run("git", ["init", "-q", "--bare", "-b", "main", ORIGIN], VIVA_ROOT);
 
 git("init", "-q", "-b", "main");
 git("remote", "add", "origin", ORIGIN);
+// A fresh machine may have no git identity, and git refuses to commit without one.
+for (const [key, fallback] of [["user.name", "Viva Demo"], ["user.email", "demo@viva.local"]] as const) {
+  try {
+    git("config", key);
+  } catch {
+    git("config", key, fallback);
+  }
+}
 write(BEFORE);
 commit("Handle paid-order webhooks from the card gateway");
 git("push", "-q", "-u", "origin", "main");

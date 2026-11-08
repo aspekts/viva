@@ -6,8 +6,10 @@ import { newerReview, skipErrorMessage } from "./gate";
 import { loadErrorMessage, submitErrorMessage } from "./messages";
 import { QuestionCode } from "./QuestionCode";
 import { ReviewResult } from "./ReviewResult";
+import { appendSpoken } from "./voice";
+import { VoiceExam } from "./VoiceExam";
 
-/** Typed exam first. Sophina adds the ElevenLabs voice session behind the same answers. */
+/** Typed or spoken: the ElevenLabs examiner writes into the same answer boxes the person can type in. */
 export function ExamRoom({ reviewId }: { reviewId: string | null }) {
   const [review, setReview] = useState<Review | null>(null);
   const [drafts, setDrafts] = useState<Drafts>({});
@@ -17,6 +19,8 @@ export function ExamRoom({ reviewId }: { reviewId: string | null }) {
   const [empty, setEmpty] = useState(false);
   const [skipping, setSkipping] = useState(false);
   const [skipError, setSkipError] = useState<string | null>(null);
+  const [voiced, setVoiced] = useState<ReadonlySet<string>>(new Set());
+  const [speakingTo, setSpeakingTo] = useState<string | null>(null);
 
   useEffect(() => {
     const loader = reviewLoader(
@@ -61,7 +65,7 @@ export function ExamRoom({ reviewId }: { reviewId: string | null }) {
     setSubmitting(true);
     setSubmitError(null);
     try {
-      setReview(await submitAnswers(review.id, buildAnswers(questions, drafts)));
+      setReview(await submitAnswers(review.id, buildAnswers(questions, drafts, voiced)));
     } catch (e: unknown) {
       setSubmitError(submitErrorMessage(e));
     } finally {
@@ -72,8 +76,21 @@ export function ExamRoom({ reviewId }: { reviewId: string | null }) {
   return (
     <section>
       <h1>Can you defend this change?</h1>
+      <VoiceExam
+        review={review}
+        questions={questions}
+        disabled={submitting}
+        onCurrent={(id) => {
+          setSpeakingTo(id);
+          if (id) document.getElementById(`question-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+        }}
+        onSpoken={(id, text) => {
+          setDrafts((current) => ({ ...current, [id]: appendSpoken(current[id], text) }));
+          setVoiced((current) => new Set(current).add(id));
+        }}
+      />
       {questions.map((q, index) => (
-        <label key={q.id} className="question">
+        <label key={q.id} id={`question-${q.id}`} className="question" data-current={speakingTo === q.id ? "" : undefined}>
           <span>
             {index + 1} of {questions.length}: {q.ask}
           </span>

@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { userInfo } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Review } from "@viva/contracts";
@@ -36,6 +37,17 @@ function pushBase(): string {
     }
   }
   return "HEAD~1";
+}
+
+/** Who is pushing. Without a git user.name, fall back to the OS account rather than skipping the gate. */
+function pushPerson(): string {
+  try {
+    const name = git("config", "user.name");
+    if (name) return name;
+  } catch {
+    // Unset: use the OS account.
+  }
+  return userInfo().username;
 }
 
 /** With no agent session, the pushed commit messages are the closest thing to a stated intent. */
@@ -93,7 +105,7 @@ export async function gate(client = new DaemonClient()): Promise<number> {
       repoPath: git("rev-parse", "--show-toplevel"),
       base,
       head: git("rev-parse", "HEAD"),
-      person: git("config", "user.name"),
+      person: pushPerson(),
       intent: commitIntent(base),
     };
 

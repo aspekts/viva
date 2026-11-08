@@ -6,7 +6,7 @@ import {
   defaults, fixtureRepo, loadChange, MeteredProvider, runChecks, runPrechecks, scanForInjection,
   type CheckDefinition, type LlmProvider,
 } from "@viva/engine";
-import { checkNames, holdoutIds, type CheckName, type EvalCase, type ExpectedClaim, type RequestedRegion } from "./cases/index.js";
+import { checkNames, holdoutIds, realIds, type CheckName, type EvalCase, type ExpectedClaim, type RequestedRegion } from "./cases/index.js";
 
 export type Status = "HIT" | "MISS" | "CLEAR" | "FP" | "EXTRA" | "MISLABEL" | "GATE" | "ERROR" | "NOT-RUN";
 export interface Cell {
@@ -198,8 +198,9 @@ function splitTable(matrix: Matrix, cases: EvalCase[]): string {
   return [
     "| Split | Clean false positives | Recall, any check | Recall, silent-decision | Requested handled correctly | Matched claims labelled silent | Mean slowest cell ms | Tokens in / out |",
     "| --- | --- | --- | --- | --- | --- | ---: | ---: |",
-    ...split("tune", (id) => !holdoutIds.includes(id)),
+    ...split("tune", (id) => !holdoutIds.includes(id) && !realIds.includes(id)),
     ...split("holdout", (id) => holdoutIds.includes(id)),
+    ...split("real", (id) => realIds.includes(id)),
   ].join("\n");
 }
 

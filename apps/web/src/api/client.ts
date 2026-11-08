@@ -1,4 +1,4 @@
-import { FogMap, Review, ReviewCode, SavedMemory, VivaEvent, type Answer, type CodeLocation } from "@viva/contracts";
+import { FogMap, Review, ReviewCode, SavedMemory, VivaEvent, VoiceSession, type Answer, type CodeLocation } from "@viva/contracts";
 import mockCode from "../../../../fixtures/mock/code.json";
 import mockFog from "../../../../fixtures/mock/fog.json";
 import mockEmptyFog from "../../../../fixtures/mock/fog-empty.json";
@@ -8,16 +8,20 @@ import mockMemory from "../../../../fixtures/mock/memory.json";
 import mockSampleReview from "../../../../fixtures/mock/review.json";
 import { ApiError } from "./errors";
 import { mockSubmit } from "./mock";
+import { rollFog } from "./mock-roll";
 
 export { ApiError };
 
 /**
  * Mock mode lets the UI run with no daemon: add ?mock to the URL. Add &empty for
- * the empty states, &hard for a review blocked by a hard gate, or &failed for a failed exam.
+ * the empty states, &roll for fog that rolls in and clears on a timer, &hard for a review blocked by a hard gate, or &failed for a failed exam.
  */
 const params = new URLSearchParams(location.search);
 const MOCK = params.has("mock");
 const MOCK_EMPTY = MOCK && params.has("empty");
+const MOCK_ROLL = MOCK && params.has("roll");
+const MOCK_ROLL_MS = 4000;
+const mockRollStart = Date.now();
 const mockReview = !MOCK ? mockSampleReview : params.has("hard") ? mockHardGate : params.has("failed") ? mockFailed : mockSampleReview;
 
 export const isMockMode = MOCK;
@@ -35,6 +39,10 @@ const POLL_MS = 2000;
  * stop. It listens to live events, and polls for as long as they're unavailable.
  */
 export function watch(topic: VivaEvent["type"], refresh: () => void): () => void {
+  if (MOCK_ROLL && topic === "fog") {
+    const timer = setInterval(refresh, MOCK_ROLL_MS);
+    return () => clearInterval(timer);
+  }
   if (MOCK) return () => {};
   let poll: ReturnType<typeof setInterval> | undefined;
   const startPolling = () => { poll ??= setInterval(refresh, POLL_MS); };
@@ -60,6 +68,7 @@ export function watch(topic: VivaEvent["type"], refresh: () => void): () => void
 
 /** Maps the most recently pushed repo. `repoPath` is null until the daemon has seen a push. */
 export async function getFog(): Promise<FogMap> {
+  if (MOCK_ROLL) return rollFog(FogMap.parse(mockFog), Math.floor((Date.now() - mockRollStart) / MOCK_ROLL_MS));
   if (MOCK) return FogMap.parse(MOCK_EMPTY ? mockEmptyFog : mockFog);
   return FogMap.parse(await json("/v1/fog"));
 }
@@ -144,3 +153,10 @@ export async function saveMemory(id: string): Promise<SavedMemory> {
   if (MOCK) return SavedMemory.parse(mockMemory);
   return SavedMemory.parse(await json(`/v1/reviews/${encodeURIComponent(id)}/memory`, { method: "POST" }));
 }
+
+/** A signed ElevenLabs URL for the voice examiner. Throws an ApiError with status 503 when voice isn't set up. */
+export async function getVoiceSession(): Promise<VoiceSession> {
+  if (MOCK) throw new ApiError(503, "voice is unavailable in mock mode");
+  return VoiceSession.parse(await json("/v1/voice/session"));
+}
+

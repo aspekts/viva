@@ -5,7 +5,7 @@ import {
   fixtureRepo, GeminiProvider, grepBlastRadius, loadChecks, MockProvider, startReview,
   type LlmProvider,
 } from "@viva/engine";
-import { cases, holdoutIds } from "./cases/index.js";
+import { cases, holdoutIds, realIds } from "./cases/index.js";
 import { smokeCases } from "./cases/smoke.js";
 import { runExamEval, summarizeExam } from "./exam.js";
 import { formatRow, REPORT_MARKER, report, runMatrix, safeError, summarize } from "./matrix.js";
@@ -49,8 +49,9 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
   }
   const option = (flag: string) => (args.includes(flag) ? args[args.indexOf(flag) + 1] : undefined);
   const split = option("--split") ?? "all";
-  if (!["all", "tune", "holdout"].includes(split)) throw new Error("--split must be all, tune or holdout");
-  const selected = cases.filter((c) => split === "all" || holdoutIds.includes(c.id) === (split === "holdout"));
+  if (!["all", "tune", "holdout", "real"].includes(split)) throw new Error("--split must be all, tune, holdout or real");
+  const inSplit = (id: string): string => (realIds.includes(id) ? "real" : holdoutIds.includes(id) ? "holdout" : "tune");
+  const selected = cases.filter((c) => split === "all" || inSplit(c.id) === split);
   const paceMs = live ? Number(option("--pace-ms") ?? 5000) : 0;
   let llm: LlmProvider = new MockProvider();
   let model = "deterministic mock (NOT model quality)";
