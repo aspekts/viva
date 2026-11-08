@@ -123,6 +123,12 @@ describe("getFog", () => {
     await getFog();
     expect(fetch).toHaveBeenCalledWith("/v1/fog?repo=D%3A%2Frepos%2Fviva", undefined);
   });
+
+  it("rejects with the status when the daemon cannot map that repo, so the page can say so", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: "internal error" }), { status: 500 })));
+    const { getFog } = await client("?repo=D%3A%2Fgone");
+    await expect(getFog()).rejects.toThrow("500");
+  });
 });
 
 describe("reviews", () => {

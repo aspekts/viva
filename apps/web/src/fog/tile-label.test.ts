@@ -25,4 +25,13 @@ describe("labelDetail", () => {
   it("shows the folder and who understands it on a big tile", () => {
     expect(labelDetail({ x: 0, y: 0, w: 12, h: 10 })).toBe("full");
   });
+
+  it("switches level exactly at the thresholds", () => {
+    expect(labelDetail({ x: 0, y: 0, w: 6, h: 3.8 })).toBe("name");
+    expect(labelDetail({ x: 0, y: 0, w: 5.9, h: 3.8 })).toBe("none");
+    expect(labelDetail({ x: 0, y: 0, w: 6, h: 3.7 })).toBe("none");
+    expect(labelDetail({ x: 0, y: 0, w: 10, h: 8 })).toBe("full");
+    expect(labelDetail({ x: 0, y: 0, w: 9.9, h: 8 })).toBe("name");
+    expect(labelDetail({ x: 0, y: 0, w: 10, h: 7.9 })).toBe("name");
+  });
 });
