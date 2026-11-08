@@ -8,16 +8,20 @@ import mockMemory from "../../../../fixtures/mock/memory.json";
 import mockSampleReview from "../../../../fixtures/mock/review.json";
 import { ApiError } from "./errors";
 import { mockSubmit } from "./mock";
+import { rollFog } from "./mock-roll";
 
 export { ApiError };
 
 /**
  * Mock mode lets the UI run with no daemon: add ?mock to the URL. Add &empty for
- * the empty states, &hard for a review blocked by a hard gate, or &failed for a failed exam.
+ * the empty states, &roll for fog that rolls in and clears on a timer, &hard for a review blocked by a hard gate, or &failed for a failed exam.
  */
 const params = new URLSearchParams(location.search);
 const MOCK = params.has("mock");
 const MOCK_EMPTY = MOCK && params.has("empty");
+const MOCK_ROLL = MOCK && params.has("roll");
+const MOCK_ROLL_MS = 4000;
+let mockRollStep = 0;
 const mockReview = !MOCK ? mockSampleReview : params.has("hard") ? mockHardGate : params.has("failed") ? mockFailed : mockSampleReview;
 
 export const isMockMode = MOCK;
@@ -35,6 +39,10 @@ const POLL_MS = 2000;
  * stop. It listens to live events, and polls for as long as they're unavailable.
  */
 export function watch(topic: VivaEvent["type"], refresh: () => void): () => void {
+  if (MOCK_ROLL && topic === "fog") {
+    const timer = setInterval(refresh, MOCK_ROLL_MS);
+    return () => clearInterval(timer);
+  }
   if (MOCK) return () => {};
   let poll: ReturnType<typeof setInterval> | undefined;
   const startPolling = () => { poll ??= setInterval(refresh, POLL_MS); };
@@ -60,6 +68,7 @@ export function watch(topic: VivaEvent["type"], refresh: () => void): () => void
 
 /** Maps the most recently pushed repo. `repoPath` is null until the daemon has seen a push. */
 export async function getFog(): Promise<FogMap> {
+  if (MOCK_ROLL) return rollFog(FogMap.parse(mockFog), mockRollStep++);
   if (MOCK) return FogMap.parse(MOCK_EMPTY ? mockEmptyFog : mockFog);
   return FogMap.parse(await json("/v1/fog"));
 }
