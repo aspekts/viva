@@ -66,11 +66,12 @@ export function watch(topic: VivaEvent["type"], refresh: () => void): () => void
   };
 }
 
-/** Maps the most recently pushed repo. `repoPath` is null until the daemon has seen a push. */
+/** Maps the repo in ?repo, or else the most recently pushed one. `repoPath` is null until the daemon has seen a push. */
 export async function getFog(): Promise<FogMap> {
   if (MOCK_ROLL) return rollFog(FogMap.parse(mockFog), Math.floor((Date.now() - mockRollStart) / MOCK_ROLL_MS));
   if (MOCK) return FogMap.parse(MOCK_EMPTY ? mockEmptyFog : mockFog);
-  return FogMap.parse(await json("/v1/fog"));
+  const repo = params.get("repo");
+  return FogMap.parse(await json(repo ? `/v1/fog?${new URLSearchParams({ repo })}` : "/v1/fog"));
 }
 
 export async function getReview(id: string): Promise<Review> {
