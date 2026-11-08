@@ -18,7 +18,7 @@
 }
 
 body { margin: 0; background: var(--paper); color: var(--ink); font: 1.125rem/1.5 var(--font-text); }
-main { max-width: 1400px; margin: 0 auto; padding: 1.5rem; }
+main { max-width: 1800px; margin: 0 auto; padding: 1.5rem; }
 h1, h2 { font-weight: 700; line-height: 1.15; text-wrap: balance; }
 h1 { font-size: 2rem; margin: 0 0 0.4rem; }
 h2 { font-size: 1.35rem; margin: 0 0 0.3rem; }
@@ -38,7 +38,7 @@ button:disabled, button[aria-disabled="true"] { opacity: 0.55; cursor: progress;
 .fog-swatch { display: inline-block; width: 0.9rem; height: 0.9rem; border: 1px solid var(--ink-soft); border-radius: var(--radius); margin-left: 0.6rem; }
 .fog-swatch-clear { background: var(--clear); }
 .fog-swatch-fog { background: var(--fog); }
-.fog-map { position: relative; width: min(100%, calc((100vh - 11rem) * 16 / 9)); aspect-ratio: 16 / 9; margin: 0 auto; background: var(--rule); }
+.fog-map { position: relative; width: min(100%, calc((100vh - 14rem) * 16 / 9)); aspect-ratio: 16 / 9; margin: 0 auto; background: var(--rule); }
 @property --fog-level { syntax: "<number>"; inherits: true; initial-value: 0; }
 .fog-node { transition: --fog-level 1.8s ease-in-out, left 0.8s ease, top 0.8s ease, width 0.8s ease, height 0.8s ease, opacity 0.4s ease; }
 .fog-node[data-shift="in"] { animation: fog-in 2.4s ease-out; }
