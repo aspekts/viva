@@ -83,6 +83,24 @@ describe("watch", () => {
   });
 });
 
+describe("mock roll", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("refreshes the fog on a timer and serves a changing map", async () => {
+    const { watch, getFog } = await client("?mock&roll");
+    const refresh = vi.fn();
+    const stop = watch("fog", refresh);
+    vi.advanceTimersByTime(8000);
+    expect(refresh).toHaveBeenCalledTimes(2);
+    stop();
+    const first = await getFog();
+    expect((await getFog()).nodes).toEqual(first.nodes);
+    vi.advanceTimersByTime(4000);
+    expect((await getFog()).nodes.map((n) => n.fog)).not.toEqual(first.nodes.map((n) => n.fog));
+  });
+});
+
 describe("reviews", () => {
   afterEach(() => vi.unstubAllGlobals());
 

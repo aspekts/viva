@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FogMap, FogNode } from "@viva/contracts";
 import { getFog, watch } from "../api/client";
+import { fogShifts, type FogShift } from "./fog-shifts";
 import { layoutTreemap, type Rect } from "./treemap";
 
 /** The map is laid out in a 16:9 box, then drawn in percentages so it scales to any screen. */
@@ -24,11 +25,13 @@ const fogLabel = (node: FogNode): string =>
 interface FogTileProps {
   node: FogNode;
   rect: Rect;
+  shift: FogShift | undefined;
 }
 
-const FogTile = ({ node, rect }: FogTileProps) => (
+const FogTile = ({ node, rect, shift }: FogTileProps) => (
   <article
     className="fog-node"
+    data-shift={shift}
     tabIndex={0}
     aria-label={`${nodeName(node)}. ${fogLabel(node)}. ${knownByLabel(node)}.`}
     title={`${node.file}\n${fogLabel(node)}\n${knownByLabel(node)}`}
@@ -52,10 +55,17 @@ const FogTile = ({ node, rect }: FogTileProps) => (
 /** Code nobody has shown they understand sits under fog. The clearer the tile, the better it is understood. */
 export function FogView() {
   const [map, setMap] = useState<FogMap | null>(null);
+  const [shifts, setShifts] = useState<ReadonlyMap<string, FogShift>>(new Map());
+  const previous = useRef<FogMap | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const load = () => getFog().then((loaded) => { setMap(loaded); setError(null); }, (e: Error) => setError(e.message));
+    const load = () => getFog().then((loaded) => {
+        setShifts(fogShifts(previous.current, loaded));
+        previous.current = loaded;
+        setMap(loaded);
+        setError(null);
+      }, (e: Error) => setError(e.message));
     load();
     return watch("fog", load);
   }, []);
@@ -64,12 +74,14 @@ export function FogView() {
     () =>
       map
         ? layoutTreemap(
-            map.nodes.map((n, index) => ({ key: String(index), weight: tileWeight(n) })),
+            map.nodes.map((n) => ({ key: n.id, weight: tileWeight(n) })),
             MAP,
           )
         : [],
     [map],
   );
+
+  const nodesById = useMemo(() => new Map((map?.nodes ?? []).map((n) => [n.id, n])), [map]);
 
   if (error)
     return (
@@ -97,8 +109,8 @@ export function FogView() {
       ) : (
         <div className="fog-map">
           {tiles.map(({ key, rect }) => {
-            const node = map.nodes[Number(key)];
-            return node ? <FogTile key={key} node={node} rect={rect} /> : null;
+            const node = nodesById.get(key);
+            return node ? <FogTile key={key} node={node} rect={rect} shift={shifts.get(key)} /> : null;
           })}
         </div>
       )}

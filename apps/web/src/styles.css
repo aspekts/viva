@@ -39,6 +39,13 @@ button:disabled, button[aria-disabled="true"] { opacity: 0.55; cursor: progress;
 .fog-swatch-clear { background: var(--clear); }
 .fog-swatch-fog { background: var(--fog); }
 .fog-map { position: relative; width: min(100%, calc((100vh - 11rem) * 16 / 9)); aspect-ratio: 16 / 9; margin: 0 auto; background: var(--rule); }
+@property --fog-level { syntax: "<number>"; inherits: true; initial-value: 0; }
+.fog-node { transition: --fog-level 1.8s ease-in-out, left 0.8s ease, top 0.8s ease, width 0.8s ease, height 0.8s ease; }
+.fog-node[data-shift="in"] { animation: fog-in 2.4s ease-out; }
+.fog-node[data-shift="out"] { animation: fog-out 2.4s ease-out; }
+@keyframes fog-in { 0%, 30% { box-shadow: inset 0 0 0 4px var(--fog); } 100% { box-shadow: inset 0 0 0 4px transparent; } }
+@keyframes fog-out { 0%, 30% { box-shadow: inset 0 0 0 4px var(--pen); } 100% { box-shadow: inset 0 0 0 4px transparent; } }
+@media (prefers-reduced-motion: reduce) { .fog-node, .fog-node[data-shift] { transition: none; animation: none; } }
 .fog-node { position: absolute; box-sizing: border-box; border: 2px solid var(--paper); background: var(--clear); overflow: hidden; outline-offset: -4px; }
 .fog-node::after { content: ""; position: absolute; inset: 0; background: var(--fog); opacity: calc(0.05 + var(--fog-level, 0) * 0.9); backdrop-filter: blur(calc(var(--fog-level, 0) * 6px)); pointer-events: none; }
 .fog-node:focus-visible { outline: 3px solid var(--ink); z-index: 2; }

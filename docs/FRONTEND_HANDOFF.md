@@ -12,7 +12,7 @@ pnpm install
 pnpm dev:web
 ```
 
-Open http://localhost:5173/?mock. Everything works on sample data, so you don't need the backend, an API key, or Marcus.
+Open http://localhost:5173/?mock. Everything works on sample data, so you don't need the backend, an API key, or Marcus. Add `&roll` to watch fog roll in and clear on a 4s loop.
 
 To run the whole thing, copy `.env.example` to `.env` and run `pnpm dev`. That uses a mock model until `VIVA_LLM` is set to `gemini`.
 
