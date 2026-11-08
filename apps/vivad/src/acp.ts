@@ -185,10 +185,12 @@ export class VivaAcpAgent {
 }
 
 /** Newline-delimited JSON-RPC over stdio. */
-export function serveAcp(input: NodeJS.ReadableStream = process.stdin, output: NodeJS.WritableStream = process.stdout) {
+export function serveAcp(input: NodeJS.ReadableStream = process.stdin, output: NodeJS.WritableStream = process.stdout): Promise<void> {
   const send = (message: unknown) => output.write(`${JSON.stringify(message)}\n`);
   const agent = new VivaAcpAgent((method, params) => send({ jsonrpc: "2.0", method, params }));
-  createInterface({ input }).on("line", (line) => {
+  const lines = createInterface({ input });
+  const closed = new Promise<void>((resolve) => lines.once("close", resolve));
+  lines.on("line", (line) => {
     if (!line.trim()) return;
     let message: { id?: unknown; method?: string; params?: Record<string, unknown> };
     try { message = JSON.parse(line); } catch { return send({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "parse error" } }); }
@@ -202,4 +204,5 @@ export function serveAcp(input: NodeJS.ReadableStream = process.stdin, output: N
       },
     );
   });
+  return closed;
 }

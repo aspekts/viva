@@ -144,8 +144,8 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
   if (command === "gate") return gate();
   if (command === "acp") {
     const { serveAcp } = await import("./acp.js");
-    serveAcp();
-    return new Promise<number>(() => {});
+    await serveAcp();
+    return 0;
   }
   if (command === "hook" && sub === "install") return installHook();
   if (command === "ledger" && sub === "sync") {

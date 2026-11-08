@@ -1,0 +1,6 @@
+#!/bin/sh
+# Starts the Viva ACP agent. Editors launch agents without your shell's PATH,
+# so add the usual Node locations before running tsx.
+export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.volta/bin:$PATH"
+VIVA_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+exec "$VIVA_ROOT/node_modules/.bin/tsx" "$VIVA_ROOT/apps/vivad/src/cli.ts" acp
