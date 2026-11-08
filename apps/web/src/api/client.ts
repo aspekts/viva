@@ -2,6 +2,7 @@ import { FogMap, Review, ReviewCode, SavedMemory, VivaEvent, type Answer, type C
 import mockCode from "../../../../fixtures/mock/code.json";
 import mockFog from "../../../../fixtures/mock/fog.json";
 import mockEmptyFog from "../../../../fixtures/mock/fog-empty.json";
+import mockFailed from "../../../../fixtures/mock/review-failed.json";
 import mockHardGate from "../../../../fixtures/mock/review-hard-gate.json";
 import mockMemory from "../../../../fixtures/mock/memory.json";
 import mockSampleReview from "../../../../fixtures/mock/review.json";
@@ -12,12 +13,12 @@ export { ApiError };
 
 /**
  * Mock mode lets the UI run with no daemon: add ?mock to the URL. Add &empty for
- * the empty states, or &hard for a review blocked by a hard gate.
+ * the empty states, &hard for a review blocked by a hard gate, or &failed for a failed exam.
  */
 const params = new URLSearchParams(location.search);
 const MOCK = params.has("mock");
 const MOCK_EMPTY = MOCK && params.has("empty");
-const mockReview = MOCK && params.has("hard") ? mockHardGate : mockSampleReview;
+const mockReview = !MOCK ? mockSampleReview : params.has("hard") ? mockHardGate : params.has("failed") ? mockFailed : mockSampleReview;
 
 export const isMockMode = MOCK;
 

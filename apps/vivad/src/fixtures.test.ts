@@ -11,6 +11,7 @@ describe("mock fixtures", () => {
     expect(FogMap.parse(fixture("fog-empty.json"))).toMatchObject({ repoPath: null, nodes: [] });
     expect(() => Review.parse(fixture("review.json"))).not.toThrow();
     expect(Review.parse(fixture("review-hard-gate.json")).gate).toMatchObject({ skippable: false });
+    expect(Review.parse(fixture("review-failed.json")).gate).toMatchObject({ reason: "exam-failed", skippable: true });
     expect(() => ReviewFeedback.parse(fixture("feedback.json"))).not.toThrow();
     expect(() => ReviewCode.parse(fixture("code.json"))).not.toThrow();
     expect(() => SavedMemory.parse(fixture("memory.json"))).not.toThrow();
